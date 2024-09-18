@@ -1,1 +1,5 @@
+# Node.js
 node_modules/
+
+# Something with the local finder, doesn't need to be in repo
+.DS_Store
