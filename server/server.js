@@ -7,15 +7,19 @@ const bodyParser = require('body-parser');
 const db = require('./database');
 
 const app = express();
-const port = 8080;
+const PORT = process.env.PORT || 8080;
 const cors = require('cors');
 
 // Middleware
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json());
 
 // TESTING W/ REACT APP
-app.use(cors())
+app.use(cors());
+
+// Serve static files from the React app
+// This looks for the build folder in the client directory
+// to serve the React app from there.
+app.use(express.static(path.join(__dirname, "../client/build")));
 
 // Test API endpoint
 app.get('/', (req, res) => {
@@ -176,8 +180,13 @@ app.post('/get-entry', (req, res) => {
   });
 });
 
+// Catch-all route to serve the React app for any other request
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../client/build/index.html"));
+});
+
 // Start the server
-app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
 
