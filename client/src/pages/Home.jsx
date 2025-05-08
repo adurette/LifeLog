@@ -25,9 +25,15 @@ export function Home() {
     try {
       const responseData = await api.fetchData(date);
       // update each metric with the retrieved value for the new date
+      console.log("Response data:", responseData);
+      if (!Array.isArray(responseData)) {
+        console.error("Invalid response data format, expected an array");
+        throw new Error("Invalid response data format");
+      }
       const data = responseData.map((item) => item.data);
       setInputValues(data);
     } catch (error) {
+      console.error("Error fetching metric data:", error);
       alert(`Error: ${error}`);
     }
   };

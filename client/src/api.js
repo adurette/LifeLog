@@ -25,7 +25,7 @@ export const addMetric = async (title, inputType) => {
     console.log(`title: ${title}`);
     console.log(`inputType: ${inputType}`);
 
-    fetch(`${APIURL}/add-metric`, {
+    fetch(`${APIURL}/metrics/add-metric`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -48,7 +48,7 @@ export const addMetric = async (title, inputType) => {
 export const deleteMetric = async (metricId) => {
   console.log(`delete metric api called w/ id: ${metricId}`);
   try {
-    await apiClient.post('/delete-metric', { metricId });
+    await apiClient.post('/metrics/delete-metric', { metricId });
   } catch (error) {
     raiseError();
   }
@@ -57,7 +57,7 @@ export const deleteMetric = async (metricId) => {
 // Fetch metrics
 export const fetchMetrics = async () => {
   try {
-    const response = await apiClient.get(`/get-metrics`);
+    const response = await apiClient.get(`/metrics/get-metrics`);
     return response.data;
   } catch (error) {
     raiseError(error);
@@ -68,7 +68,7 @@ export const fetchMetrics = async () => {
 export const saveData = async (data) => {
   console.log(`Saved data: ${data}`);
   try {
-    await apiClient.post(`/add-data`, data);
+    await apiClient.post(`/metrics/add-data`, data);
   } catch (error) {
     raiseError(error);
   }
@@ -76,7 +76,7 @@ export const saveData = async (data) => {
 
 // Fetch the data associated with a given date
 export const fetchData = async (date) => {
-  const response = await axios.get(`${APIURL}/get-data`,{ params: { date } });
+  const response = await axios.get(`${APIURL}/metrics/get-data`,{ params: { date } });
   //console.log(`response: ${JSON.stringify(response.data)}`);
   return response.data;
 };
