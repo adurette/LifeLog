@@ -1,5 +1,9 @@
 # Node.js
 node_modules/
+.next/
+.env.local
+.vercel/
+coverage/
 
 # Something with the local finder, doesn't need to be in repo
 .DS_Store

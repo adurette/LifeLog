@@ -1,0 +1,9 @@
+{
+  "name": "LifeLog",
+  "short_name": "LifeLog",
+  "description": "Notice what shapes your days.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1e9",
+  "theme_color": "#f4f1e9"
+}
