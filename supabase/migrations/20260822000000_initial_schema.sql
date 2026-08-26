@@ -33,7 +33,7 @@ create policy "metrics are private" on public.metrics for all using (auth.uid() 
 create policy "entries are private" on public.entries for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create function public.validate_entry() returns trigger language plpgsql security invoker set search_path = '' as $$
-declare metric_record public.metrics;
+declare metric_record public.metrics%rowtype;
 begin
   select * into metric_record from public.metrics where id = new.metric_id and user_id = new.user_id;
   if not found then raise exception 'Metric not found'; end if;
@@ -49,3 +49,9 @@ create trigger validate_entry_before_write before insert or update on public.ent
 create function public.handle_new_user() returns trigger language plpgsql security definer set search_path = '' as $$
 begin insert into public.profiles (id) values (new.id); return new; end; $$;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
+
+create function public.delete_my_account() returns void language sql security definer set search_path = '' as $$
+  delete from auth.users where id = auth.uid();
+$$;
+revoke all on function public.delete_my_account() from public;
+grant execute on function public.delete_my_account() to authenticated;

@@ -14,7 +14,7 @@ The app runs in local demo mode when Supabase variables are absent. Data is stor
 To enable cloud accounts and synchronization:
 
 1. Create a Supabase project.
-2. Run `supabase/migrations/20260822000000_initial_schema.sql`.
+2. Run the SQL files in `supabase/migrations` in timestamp order.
 3. Copy `.env.example` to `.env.local` and add the project URL and anonymous key.
 4. Configure the app URL as an allowed Supabase authentication redirect.
 

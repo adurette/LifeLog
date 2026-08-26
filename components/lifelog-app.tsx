@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { get, set } from "idb-keyval";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Archive, BarChart3, CalendarDays, Check, ChevronRight, CircleUserRound, Cloud, CloudOff, Coffee, History, Home, Menu, Plus, Settings2, SlidersHorizontal, Sparkles, Target, X } from "lucide-react";
+import { Archive, BarChart3, CalendarDays, Check, ChevronRight, CircleUserRound, Cloud, CloudOff, Coffee, Download, History, Home, LogOut, Menu, Plus, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Target, Trash2, X } from "lucide-react";
 import { comparison, dailySeries } from "@/lib/analytics";
 import { seedData } from "@/lib/seed";
 import { getSupabase } from "@/lib/supabase";
+import { toCsv, toJson } from "@/lib/export";
+import { queueAndSync, syncPending } from "@/lib/sync";
 import type { Entry, EntryValue, LifeLogData, LoggingMode, Metric, MetricColor, MetricType, ScheduleType } from "@/lib/types";
 
-type Tab = "today" | "history" | "metrics" | "insights";
+type Tab = "today" | "history" | "metrics" | "insights" | "settings";
 const STORE_KEY = "lifelog-v1";
+const cloudStoreKey = (userId: string) => `lifelog-v1:${userId}`;
 const COLORS: Record<MetricColor, string> = { sage: "#47715b", amber: "#b66b2c", blue: "#3f6f91", rose: "#a65364", violet: "#6e5a8a" };
 const day = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const prettyDate = (date: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
@@ -25,10 +28,10 @@ function useLifeLog(userId: string | null) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const supabase = getSupabase();
-    if (userId && supabase) Promise.all([supabase.from("metrics").select("*").is("archived_at", null).order("created_at"), supabase.from("entries").select("*").order("local_date")]).then(([metricResult, entryResult]) => { if (!metricResult.error && !entryResult.error) setData({ metrics: (metricResult.data ?? []).map(fromCloudMetric), entries: (entryResult.data ?? []).map(fromCloudEntry) }); setReady(true); });
+    if (userId && supabase) get<LifeLogData>(cloudStoreKey(userId)).then((cached) => { if (cached) setData(cached); return syncPending(userId); }).then(() => Promise.all([supabase.from("metrics").select("*").is("archived_at", null).order("created_at"), supabase.from("entries").select("*").order("local_date")])).then(([metricResult, entryResult]) => { if (!metricResult.error && !entryResult.error) setData({ metrics: (metricResult.data ?? []).map(fromCloudMetric), entries: (entryResult.data ?? []).map(fromCloudEntry) }); setReady(true); });
     else get<LifeLogData>(STORE_KEY).then((saved) => { if (saved) setData(saved); setReady(true); });
   }, [userId]);
-  useEffect(() => { if (ready && !userId) void set(STORE_KEY, data); }, [data, ready, userId]);
+  useEffect(() => { if (ready) void set(userId ? cloudStoreKey(userId) : STORE_KEY, data); }, [data, ready, userId]);
 
   const saveEntry = (metric: Metric, value: EntryValue, date = day()) => setData((current) => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -36,12 +39,11 @@ function useLifeLog(userId: string | null) {
     const entries = metric.loggingMode === "daily"
       ? [...current.entries.filter((entry) => !(entry.metricId === metric.id && entry.localDate === date)), base]
       : [...current.entries, base];
-    const supabase = getSupabase();
-    if (userId && supabase) void supabase.from("entries").upsert({ id: base.id, user_id: userId, metric_id: metric.id, value, occurred_at: base.occurredAt, local_date: date, timezone, slot_key: metric.loggingMode === "daily" ? "daily" : base.id }, { onConflict: "user_id,metric_id,local_date,slot_key" });
+    if (userId) void queueAndSync(userId, { id: metric.loggingMode === "daily" ? `entry:${metric.id}:${date}` : `entry:${base.id}`, kind: "entry", payload: { id: base.id, user_id: userId, metric_id: metric.id, value, occurred_at: base.occurredAt, local_date: date, timezone, slot_key: metric.loggingMode === "daily" ? "daily" : base.id } });
     return { ...current, entries };
   });
-  const addMetric = (metric: Metric) => { setData((current) => ({ ...current, metrics: [...current.metrics, metric] })); const supabase = getSupabase(); if (userId && supabase) void supabase.from("metrics").insert({ id: metric.id, user_id: userId, name: metric.name, description: metric.description, type: metric.type, unit: metric.unit, logging_mode: metric.loggingMode, schedule: metric.schedule, weekdays: metric.weekdays, color: metric.color, rating_min: metric.ratingMin, rating_max: metric.ratingMax, options: metric.options, aggregation: metric.aggregation }); };
-  const archiveMetric = (id: string) => { setData((current) => ({ ...current, metrics: current.metrics.map((metric) => metric.id === id ? { ...metric, archived: true } : metric) })); const supabase = getSupabase(); if (userId && supabase) void supabase.from("metrics").update({ archived_at: new Date().toISOString() }).eq("id", id); };
+  const addMetric = (metric: Metric) => { setData((current) => ({ ...current, metrics: [...current.metrics, metric] })); if (userId) void queueAndSync(userId, { id: `metric:${metric.id}`, kind: "metric", payload: { id: metric.id, user_id: userId, name: metric.name, description: metric.description, type: metric.type, unit: metric.unit, logging_mode: metric.loggingMode, schedule: metric.schedule, weekdays: metric.weekdays, color: metric.color, rating_min: metric.ratingMin, rating_max: metric.ratingMax, options: metric.options, aggregation: metric.aggregation } }); };
+  const archiveMetric = (id: string) => { const archivedAt = new Date().toISOString(); setData((current) => ({ ...current, metrics: current.metrics.map((metric) => metric.id === id ? { ...metric, archived: true } : metric) })); if (userId) void queueAndSync(userId, { id: `archive:${id}`, kind: "archive", payload: { id, archived_at: archivedAt } }); };
   return { data, saveEntry, addMetric, archiveMetric, ready };
 }
 
@@ -60,22 +62,23 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
   const [showAdd, setShowAdd] = useState(false);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
   useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
+    const update = () => { setOnline(navigator.onLine); if (navigator.onLine && userId) void syncPending(userId); };
     window.addEventListener("online", update); window.addEventListener("offline", update);
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
-  }, []);
+  }, [userId]);
 
   const active = data.metrics.filter((metric) => !metric.archived);
   return (
     <div className="app-shell">
       <Sidebar tab={tab} setTab={setTab} online={online} />
       <main className="main">
-        <MobileHeader online={online} />
+        <MobileHeader online={online} onSettings={() => setTab("settings")} />
         {tab === "today" && <Today metrics={active} entries={data.entries} onSave={saveEntry} onAdd={() => setShowAdd(true)} />}
         {tab === "history" && <HistoryView metrics={active} entries={data.entries} />}
         {tab === "metrics" && <MetricsView metrics={active} entries={data.entries} onAdd={() => setShowAdd(true)} onArchive={archiveMetric} />}
         {tab === "insights" && <Insights metrics={active} entries={data.entries} />}
+        {tab === "settings" && <SettingsView data={data} cloudEnabled={Boolean(userId)} />}
       </main>
       <BottomNav tab={tab} setTab={setTab} />
       {showAdd && <AddMetricModal onClose={() => setShowAdd(false)} onAdd={(metric) => { addMetric(metric); setShowAdd(false); }} />}
@@ -93,10 +96,10 @@ function Brand() { return <div className="brand"><span className="brand-mark"><s
 
 function Sidebar({ tab, setTab, online }: { tab: Tab; setTab: (tab: Tab) => void; online: boolean }) {
   const links: [Tab, typeof Home, string][] = [["today", Home, "Today"], ["history", History, "History"], ["metrics", SlidersHorizontal, "Metrics"], ["insights", BarChart3, "Insights"]];
-  return <aside className="sidebar"><Brand /><nav>{links.map(([id, Icon, label]) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={19} />{label}</button>)}</nav><div className="sidebar-foot"><div className="sync-state">{online ? <Cloud size={16} /> : <CloudOff size={16} />}<span>{online ? "Ready to sync" : "Saving offline"}</span></div><button className="profile"><span>AD</span><div><strong>Andrew</strong><small>Private space</small></div><Settings2 size={17} /></button></div></aside>;
+  return <aside className="sidebar"><Brand /><nav>{links.map(([id, Icon, label]) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={19} />{label}</button>)}</nav><div className="sidebar-foot"><div className="sync-state">{online ? <Cloud size={16} /> : <CloudOff size={16} />}<span>{online ? "Ready to sync" : "Saving offline"}</span></div><button className="profile" onClick={() => setTab("settings")}><span>AD</span><div><strong>Your account</strong><small>Private space</small></div><Settings2 size={17} /></button></div></aside>;
 }
 
-function MobileHeader({ online }: { online: boolean }) { return <header className="mobile-head"><Brand /><span className={`status-dot ${online ? "" : "offline"}`} title={online ? "Online" : "Offline"} /><Menu size={22} /></header>; }
+function MobileHeader({ online, onSettings }: { online: boolean; onSettings: () => void }) { return <header className="mobile-head"><Brand /><span className={`status-dot ${online ? "" : "offline"}`} title={online ? "Online" : "Offline"} /><button aria-label="Open settings" onClick={onSettings}><Menu size={22} /></button></header>; }
 function BottomNav({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) { const items: [Tab, typeof Home, string][] = [["today", Home, "Today"], ["history", History, "History"], ["metrics", SlidersHorizontal, "Metrics"], ["insights", BarChart3, "Insights"]]; return <nav className="bottom-nav">{items.map(([id, Icon, label]) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={20} /><span>{label}</span></button>)}</nav>; }
 
 function PageHeader({ eyebrow, title, copy, action }: { eyebrow: string; title: string; copy: string; action?: React.ReactNode }) { return <div className="page-header"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{copy}</p></div>{action}</div>; }
@@ -104,7 +107,7 @@ function PageHeader({ eyebrow, title, copy, action }: { eyebrow: string; title: 
 function Today({ metrics, entries, onSave, onAdd }: { metrics: Metric[]; entries: Entry[]; onSave: (metric: Metric, value: EntryValue) => void; onAdd: () => void }) {
   const today = day();
   const weekday = new Date().getDay();
-  const due = metrics.filter((metric) => metric.schedule === "daily" || (metric.schedule === "weekdays" && metric.weekdays?.includes(weekday)));
+  const due = metrics.filter((metric) => metric.loggingMode === "daily" && (metric.schedule === "daily" || (metric.schedule === "weekdays" && metric.weekdays?.includes(weekday))));
   const events = metrics.filter((metric) => metric.loggingMode === "event");
   const done = due.filter((metric) => entries.some((entry) => entry.metricId === metric.id && entry.localDate === today)).length;
   return <div className="page"><PageHeader eyebrow={new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date())} title="How was your day?" copy="A minute of noticing adds up to a clearer picture." action={<button className="avatar-button" aria-label="Profile"><CircleUserRound size={25} /></button>} />
@@ -117,7 +120,7 @@ function Today({ metrics, entries, onSave, onAdd }: { metrics: Metric[]; entries
 }
 
 function MetricCard({ metric, entry, onSave }: { metric: Metric; entry?: Entry; onSave: (metric: Metric, value: EntryValue) => void }) {
-  const [value, setValue] = useState<EntryValue>(entry?.value ?? (metric.type === "boolean" ? false : metric.type === "rating" ? 5 : ""));
+  const [value, setValue] = useState<EntryValue>(entry?.value ?? (metric.type === "boolean" ? false : metric.type === "rating" ? 5 : metric.type === "number" ? 0 : ""));
   const complete = Boolean(entry);
   return <article className={`metric-card ${complete ? "complete" : ""}`} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}><header><span className="metric-icon"><MetricGlyph metric={metric} /></span><div><h3>{metric.name}</h3><p>{metric.description}</p></div>{complete && <span className="check"><Check size={15} /></span>}</header>
     <div className="metric-control">
@@ -153,8 +156,31 @@ function Insights({ metrics, entries }: { metrics: Metric[]; entries: Entry[] })
   </div>;
 }
 
+function downloadFile(name: string, content: string, type: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+  URL.revokeObjectURL(url);
+}
+
+function SettingsView({ data, cloudEnabled }: { data: LifeLogData; cloudEnabled: boolean }) {
+  const exportDate = day();
+  const signOut = async () => { await getSupabase()?.auth.signOut(); };
+  const deleteAccount = async () => {
+    if (!window.confirm("Permanently delete your account and all LifeLog data? This cannot be undone.")) return;
+    const supabase = getSupabase(); if (!supabase) return;
+    const { error } = await supabase.rpc("delete_my_account");
+    if (!error) await supabase.auth.signOut();
+  };
+  const resetDemo = async () => { if (!window.confirm("Reset all local demo data?")) return; await set(STORE_KEY, seedData); window.location.reload(); };
+  return <div className="page settings-page"><PageHeader eyebrow="Your space" title="Settings" copy="Manage your private data and account." />
+    <section className="settings-card"><header><span><ShieldCheck size={20} /></span><div><h2>Data and privacy</h2><p>{cloudEnabled ? "Your records are protected by account-level database policies." : "Demo records are stored only in this browser."}</p></div></header><div className="settings-stats"><div><strong>{data.metrics.filter((metric) => !metric.archived).length}</strong><span>Active metrics</span></div><div><strong>{data.entries.length}</strong><span>Total entries</span></div></div></section>
+    <section className="settings-card"><header><span><Download size={20} /></span><div><h2>Export your data</h2><p>Download a portable copy whenever you want.</p></div></header><div className="settings-actions"><button className="secondary" onClick={() => downloadFile(`lifelog-${exportDate}.csv`, toCsv(data), "text/csv")}>Download CSV</button><button className="secondary" onClick={() => downloadFile(`lifelog-${exportDate}.json`, toJson(data), "application/json")}>Download JSON</button></div></section>
+    <section className="settings-card"><header><span><CircleUserRound size={20} /></span><div><h2>{cloudEnabled ? "Account" : "Demo mode"}</h2><p>{cloudEnabled ? "Sign out on this device or permanently remove your account." : "Connect Supabase to enable private cloud accounts."}</p></div></header><div className="settings-actions">{cloudEnabled ? <><button className="secondary" onClick={signOut}><LogOut size={16} />Sign out</button><button className="danger" onClick={deleteAccount}><Trash2 size={16} />Delete account</button></> : <button className="danger" onClick={resetDemo}><Trash2 size={16} />Reset demo data</button>}</div></section>
+  </div>;
+}
+
 function AddMetricModal({ onClose, onAdd }: { onClose: () => void; onAdd: (metric: Metric) => void }) {
   const [name, setName] = useState(""); const [type, setType] = useState<MetricType>("number"); const [mode, setMode] = useState<LoggingMode>("daily"); const [schedule, setSchedule] = useState<ScheduleType>("daily"); const [unit, setUnit] = useState(""); const [options, setOptions] = useState("");
-  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!name.trim()) return; onAdd({ id: crypto.randomUUID(), name: name.trim(), type, unit: unit.trim() || undefined, loggingMode: mode, schedule, color: "sage", ratingMin: 1, ratingMax: 10, options: options.split(",").map((v) => v.trim()).filter(Boolean), aggregation: "sum" }); };
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.currentTarget === e.target) onClose(); }}><form className="modal" onSubmit={submit}><header><div><span className="eyebrow">New question</span><h2>What would you like to notice?</h2></div><button type="button" aria-label="Close" onClick={onClose}><X size={20} /></button></header><label>Name<input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Hours of sleep" /></label><div className="form-row"><label>Answer type<select value={type} onChange={(e) => setType(e.target.value as MetricType)}><option value="number">Number</option><option value="rating">Rating scale</option><option value="boolean">Yes / no</option><option value="choice">Single choice</option><option value="text">Text</option></select></label><label>Logging style<select value={mode} onChange={(e) => setMode(e.target.value as LoggingMode)}><option value="daily">Once per day</option><option value="event">Multiple events</option></select></label></div>{type === "number" && <label>Unit <span>(optional)</span><input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="cups, hours, miles…" /></label>}{type === "choice" && <label>Choices <span>(comma separated)</span><input value={options} onChange={(e) => setOptions(e.target.value)} placeholder="Great, okay, difficult" /></label>}<label>Schedule<select value={schedule} onChange={(e) => setSchedule(e.target.value as ScheduleType)}><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="flexible">No schedule</option></select></label><footer><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" type="submit">Create metric</button></footer></form></div>;
+  const submit = (event: React.FormEvent) => { event.preventDefault(); const choiceOptions = options.split(",").map((v) => v.trim()).filter(Boolean); if (!name.trim() || (type === "choice" && choiceOptions.length < 2)) return; onAdd({ id: crypto.randomUUID(), name: name.trim(), type, unit: unit.trim() || undefined, loggingMode: mode, schedule, weekdays: schedule === "weekdays" ? [1, 2, 3, 4, 5] : undefined, color: "sage", ratingMin: 1, ratingMax: 10, options: choiceOptions, aggregation: "sum" }); };
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.currentTarget === e.target) onClose(); }}><form className="modal" onSubmit={submit}><header><div><span className="eyebrow">New question</span><h2>What would you like to notice?</h2></div><button type="button" aria-label="Close" onClick={onClose}><X size={20} /></button></header><label>Name<input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Hours of sleep" /></label><div className="form-row"><label>Answer type<select value={type} onChange={(e) => { const nextType = e.target.value as MetricType; setType(nextType); if (nextType !== "number") setMode("daily"); }}><option value="number">Number</option><option value="rating">Rating scale</option><option value="boolean">Yes / no</option><option value="choice">Single choice</option><option value="text">Text</option></select></label><label>Logging style<select value={mode} onChange={(e) => setMode(e.target.value as LoggingMode)}><option value="daily">Once per day</option>{type === "number" && <option value="event">Multiple events</option>}</select></label></div>{type === "number" && <label>Unit <span>(optional)</span><input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="cups, hours, miles…" /></label>}{type === "choice" && <label>Choices <span>(at least two, comma separated)</span><input required value={options} onChange={(e) => setOptions(e.target.value)} placeholder="Great, okay, difficult" /></label>}<label>Schedule<select value={schedule} onChange={(e) => setSchedule(e.target.value as ScheduleType)}><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="flexible">No schedule</option></select></label><footer><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" type="submit">Create metric</button></footer></form></div>;
 }
