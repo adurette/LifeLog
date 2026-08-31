@@ -7,3 +7,7 @@ coverage/
 
 # Something with the local finder, doesn't need to be in repo
 .DS_Store
+
+.vercel
+.env*
+!.env.example
