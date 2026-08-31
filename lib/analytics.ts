@@ -1,6 +1,7 @@
 import type { Entry, Metric } from "./types";
 
 export interface SeriesPoint { date: string; value: number }
+export type Granularity = "day" | "week" | "month";
 
 export function dailySeries(metric: Metric, entries: Entry[]): SeriesPoint[] {
   const grouped = new Map<string, number[]>();
@@ -35,8 +36,27 @@ export function spearman(xs: number[], ys: number[]): number | null {
 }
 
 export function comparison(metricA: Metric, metricB: Metric, entries: Entry[]) {
-  const a = new Map(dailySeries(metricA, entries).map((point) => [point.date, point.value]));
-  const b = new Map(dailySeries(metricB, entries).map((point) => [point.date, point.value]));
+  return compareSeries(dailySeries(metricA, entries), dailySeries(metricB, entries));
+}
+
+export function compareSeries(seriesA: SeriesPoint[], seriesB: SeriesPoint[]) {
+  const a = new Map(seriesA.map((point) => [point.date, point.value]));
+  const b = new Map(seriesB.map((point) => [point.date, point.value]));
   const points = [...a.entries()].filter(([date]) => b.has(date)).map(([date, x]) => ({ date, x, y: b.get(date)! }));
   return { points, correlation: spearman(points.map((p) => p.x), points.map((p) => p.y)) };
+}
+
+export function bucketSeries(metric: Metric, series: SeriesPoint[], granularity: Granularity): SeriesPoint[] {
+  if (granularity === "day") return series;
+  const buckets = new Map<string, number[]>();
+  series.forEach((point) => {
+    const date = new Date(`${point.date}T12:00:00`);
+    if (granularity === "week") date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    const key = granularity === "month" ? point.date.slice(0, 7) : date.toISOString().slice(0, 10);
+    buckets.set(key, [...(buckets.get(key) ?? []), point.value]);
+  });
+  return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => ({
+    date,
+    value: metric.loggingMode === "event" && metric.aggregation !== "average" ? values.reduce((sum, value) => sum + value, 0) : values.reduce((sum, value) => sum + value, 0) / values.length,
+  }));
 }
