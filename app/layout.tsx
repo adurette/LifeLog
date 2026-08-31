@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: "A private, flexible life tracker for finding patterns in the things that matter to you.",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "LifeLog", statusBarStyle: "default" },
+  icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = { themeColor: "#f4f1e9", width: "device-width", initialScale: 1, viewportFit: "cover" };

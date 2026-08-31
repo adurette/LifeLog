@@ -92,7 +92,7 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
         {tab === "history" && <HistoryView metrics={active} entries={data.entries} onAdd={saveEntry} onUpdate={updateEntry} onDelete={deleteEntry} />}
         {tab === "metrics" && <MetricsView metrics={data.metrics} entries={data.entries} onAdd={() => setShowAdd(true)} onEdit={setEditingMetric} onArchive={archiveMetric} onRestore={restoreMetric} />}
         {tab === "insights" && <Insights metrics={active} entries={data.entries} />}
-        {tab === "settings" && <SettingsView data={data} cloudEnabled={Boolean(userId)} />}
+        {tab === "settings" && <SettingsView data={data} userId={userId} />}
       </main>
       <BottomNav tab={tab} setTab={setTab} />
       {showAdd && <AddMetricModal onClose={() => setShowAdd(false)} onAdd={(metric) => { addMetric(metric); setShowAdd(false); }} />}
@@ -210,7 +210,23 @@ function downloadFile(name: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-function SettingsView({ data, cloudEnabled }: { data: LifeLogData; cloudEnabled: boolean }) {
+interface InstallPromptEvent extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> }
+function urlBase64ToUint8Array(value: string) { const padding = "=".repeat((4 - value.length % 4) % 4); const base64 = (value + padding).replaceAll("-", "+").replaceAll("_", "/"); return Uint8Array.from(window.atob(base64), (character) => character.charCodeAt(0)); }
+
+function ReminderSettings({ userId }: { userId: string }) {
+  const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null); const [time, setTime] = useState("20:00"); const [error, setError] = useState(""); const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  useEffect(() => { if (!supported) return; void navigator.serviceWorker.ready.then(async (registration) => { setSubscription(await registration.pushManager.getSubscription()); const supabase = getSupabase(); if (supabase) { const { data } = await supabase.from("profiles").select("reminder_time").eq("id", userId).single(); if (data?.reminder_time) setTime(String(data.reminder_time).slice(0, 5)); } }); }, [supported, userId]);
+  useEffect(() => { const capture = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); }; window.addEventListener("beforeinstallprompt", capture); return () => window.removeEventListener("beforeinstallprompt", capture); }, []);
+  const enable = async () => { setError(""); const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY; if (!key) { setError("Add the VAPID public key before enabling reminders."); return; } const permission = await Notification.requestPermission(); if (permission !== "granted") { setError("Notification permission was not granted."); return; } const registration = await navigator.serviceWorker.ready; const next = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) }); const json = next.toJSON(); if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) return; const supabase = getSupabase(); const { error: saveError } = await supabase!.from("push_subscriptions").upsert({ user_id: userId, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }, { onConflict: "endpoint" }); if (saveError) { setError(saveError.message); return; } await supabase!.from("profiles").update({ reminders_enabled: true, reminder_time: time }).eq("id", userId); setSubscription(next); };
+  const disable = async () => { const endpoint = subscription?.endpoint; await subscription?.unsubscribe(); const supabase = getSupabase(); if (endpoint) await supabase?.from("push_subscriptions").delete().eq("endpoint", endpoint); await supabase?.from("profiles").update({ reminders_enabled: false }).eq("id", userId); setSubscription(null); };
+  const saveTime = async (value: string) => { setTime(value); await getSupabase()?.from("profiles").update({ reminder_time: value }).eq("id", userId); };
+  const test = async () => { const registration = await navigator.serviceWorker.ready; await registration.showNotification("LifeLog reminders are ready", { body: "Your daily reflection reminder will appear like this.", icon: "/icon-192.png" }); };
+  return <><section className="settings-card"><header><span><Download size={20} /></span><div><h2>Install LifeLog</h2><p>Add it to your home screen for an app-like experience and iPhone notifications.</p></div></header><div className="settings-actions">{installPrompt ? <button className="primary" onClick={async () => { await installPrompt.prompt(); setInstallPrompt(null); }}>Install app</button> : <span className="settings-hint">On iPhone: tap Share, then “Add to Home Screen.”</span>}</div></section><section className="settings-card"><header><span><CalendarDays size={20} /></span><div><h2>Daily reminder</h2><p>Receive a private prompt to complete your check-in.</p></div></header>{supported ? <div className="reminder-controls"><label>Reminder time<input type="time" step="900" value={time} onChange={(event) => void saveTime(event.target.value)} /></label><div className="settings-actions">{subscription ? <><button className="secondary" onClick={test}>Send test</button><button className="danger" onClick={disable}>Turn off</button></> : <button className="primary" onClick={enable}>Enable reminders</button>}</div>{error && <p className="setting-error">{error}</p>}</div> : <p className="settings-hint">Install LifeLog and use a supported browser to enable reminders.</p>}</section></>;
+}
+
+function SettingsView({ data, userId }: { data: LifeLogData; userId: string | null }) {
+  const cloudEnabled = Boolean(userId);
   const exportDate = day();
   const signOut = async () => { await getSupabase()?.auth.signOut(); };
   const deleteAccount = async () => {
@@ -222,6 +238,7 @@ function SettingsView({ data, cloudEnabled }: { data: LifeLogData; cloudEnabled:
   const resetDemo = async () => { if (!window.confirm("Reset all local demo data?")) return; await set(STORE_KEY, seedData); window.location.reload(); };
   return <div className="page settings-page"><PageHeader eyebrow="Your space" title="Settings" copy="Manage your private data and account." />
     <section className="settings-card"><header><span><ShieldCheck size={20} /></span><div><h2>Data and privacy</h2><p>{cloudEnabled ? "Your records are protected by account-level database policies." : "Demo records are stored only in this browser."}</p></div></header><div className="settings-stats"><div><strong>{data.metrics.filter((metric) => !metric.archived).length}</strong><span>Active metrics</span></div><div><strong>{data.entries.length}</strong><span>Total entries</span></div></div></section>
+    {userId && <ReminderSettings userId={userId} />}
     <section className="settings-card"><header><span><Download size={20} /></span><div><h2>Export your data</h2><p>Download a portable copy whenever you want.</p></div></header><div className="settings-actions"><button className="secondary" onClick={() => downloadFile(`lifelog-${exportDate}.csv`, toCsv(data), "text/csv")}>Download CSV</button><button className="secondary" onClick={() => downloadFile(`lifelog-${exportDate}.json`, toJson(data), "application/json")}>Download JSON</button></div></section>
     <section className="settings-card"><header><span><CircleUserRound size={20} /></span><div><h2>{cloudEnabled ? "Account" : "Demo mode"}</h2><p>{cloudEnabled ? "Sign out on this device or permanently remove your account." : "Connect Supabase to enable private cloud accounts."}</p></div></header><div className="settings-actions">{cloudEnabled ? <><button className="secondary" onClick={signOut}><LogOut size={16} />Sign out</button><button className="danger" onClick={deleteAccount}><Trash2 size={16} />Delete account</button></> : <button className="danger" onClick={resetDemo}><Trash2 size={16} />Reset demo data</button>}</div></section>
   </div>;
