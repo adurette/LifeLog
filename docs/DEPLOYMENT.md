@@ -13,6 +13,10 @@ Run `npm run vapid` once. Store the public key as `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
 
 Configure Supabase Cron to call `GET https://YOUR_APP/api/reminders` every 15 minutes with `Authorization: Bearer YOUR_CRON_SECRET`. Store the same random value as the deployment's `CRON_SECRET`.
 
+## Optional email reminders
+
+Create a Resend API key and verify the sending domain. Set `RESEND_API_KEY`, `REMINDER_EMAIL_FROM` (for example, `LifeLog <reminders@yourdomain.com>`), and `NEXT_PUBLIC_APP_URL`. Email reminders remain disabled for each user until they opt in under Settings.
+
 Required production variables:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
@@ -22,6 +26,12 @@ Required production variables:
 - `VAPID_PRIVATE_KEY`
 - `VAPID_SUBJECT`
 - `CRON_SECRET`
+
+Optional for email reminders:
+
+- `RESEND_API_KEY`
+- `REMINDER_EMAIL_FROM`
+- `NEXT_PUBLIC_APP_URL`
 
 ## Private beta
 
