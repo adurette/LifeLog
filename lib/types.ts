@@ -1,5 +1,6 @@
 export type MetricType = "number" | "rating" | "boolean" | "choice" | "text";
 export type LoggingMode = "daily" | "event";
+export type FrequencyType = "once" | "times" | "interval";
 export type ScheduleType = "daily" | "weekdays" | "flexible";
 export type MetricColor = "sage" | "amber" | "blue" | "rose" | "violet";
 
@@ -17,6 +18,11 @@ export interface Metric {
   ratingMax?: number;
   options?: string[];
   aggregation?: "sum" | "count" | "average";
+  frequency?: FrequencyType;
+  timesPerDay?: number;
+  intervalHours?: number;
+  scheduleTimes?: string[];
+  notificationsEnabled?: boolean;
   notesEnabled?: boolean;
   archived?: boolean;
 }
@@ -30,6 +36,7 @@ export interface Entry {
   occurredAt: string;
   localDate: string;
   timezone: string;
+  slotKey?: string;
   note?: string;
   synced?: boolean;
 }
