@@ -17,6 +17,7 @@ export interface Metric {
   ratingMax?: number;
   options?: string[];
   aggregation?: "sum" | "count" | "average";
+  notesEnabled?: boolean;
   archived?: boolean;
 }
 
