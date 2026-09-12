@@ -3,8 +3,8 @@ import webPush from "web-push";
 
 export const dynamic = "force-dynamic";
 
-type SubscriptionRow = { id: string; endpoint: string; p256dh: string; auth: string };
-type MetricRow = { id: string; name: string; schedule: "daily" | "weekdays" | "flexible"; weekdays: number[] | null; frequency: "once" | "times" | "interval"; interval_hours: number; schedule_times: string[] };
+type SubscriptionRow = { id: string; user_id: string; endpoint: string; p256dh: string; auth: string };
+type MetricRow = { id: string; user_id: string; name: string; schedule: "daily" | "weekdays" | "flexible"; weekdays: number[] | null; frequency: "once" | "times" | "interval"; interval_hours: number; schedule_times: string[] };
 type ProfileRow = { id: string; timezone: string; push_subscriptions: SubscriptionRow[]; metrics: MetricRow[] };
 
 function localNow(now: Date, timezone: string) {
@@ -27,10 +27,22 @@ export async function GET(request: Request) {
   if (!url || !serviceKey || !publicKey || !privateKey) return Response.json({ error: "Reminder environment is incomplete" }, { status: 503 });
   webPush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:admin@example.com", publicKey, privateKey);
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data, error } = await supabase.from("profiles").select("id, timezone, push_subscriptions(id, endpoint, p256dh, auth), metrics!inner(id, name, schedule, weekdays, frequency, interval_hours, schedule_times)").eq("reminders_enabled", true).eq("metrics.notifications_enabled", true).is("metrics.archived_at", null);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  const { data: profileRows, error: profileError } = await supabase.from("profiles").select("id, timezone").eq("reminders_enabled", true);
+  if (profileError) return Response.json({ error: profileError.message }, { status: 500 });
+  if (!profileRows?.length) return Response.json({ sent: 0, checked: 0 });
+  const userIds = profileRows.map((profile) => profile.id);
+  const [{ data: subscriptionRows, error: subscriptionError }, { data: metricRows, error: metricError }] = await Promise.all([
+    supabase.from("push_subscriptions").select("id, user_id, endpoint, p256dh, auth").in("user_id", userIds),
+    supabase.from("metrics").select("id, user_id, name, schedule, weekdays, frequency, interval_hours, schedule_times").in("user_id", userIds).eq("notifications_enabled", true).is("archived_at", null),
+  ]);
+  if (subscriptionError || metricError) return Response.json({ error: subscriptionError?.message ?? metricError?.message }, { status: 500 });
+  const data: ProfileRow[] = profileRows.map((profile) => ({
+    ...profile,
+    push_subscriptions: (subscriptionRows as SubscriptionRow[] | null)?.filter((subscription) => subscription.user_id === profile.id) ?? [],
+    metrics: (metricRows as MetricRow[] | null)?.filter((metric) => metric.user_id === profile.id) ?? [],
+  }));
   const now = new Date(); let sent = 0;
-  for (const profile of (data ?? []) as ProfileRow[]) {
+  for (const profile of data) {
     const local = localNow(now, profile.timezone); const weekday = new Date(`${local.date}T12:00:00Z`).getUTCDay();
     const { data: entries } = await supabase.from("entries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date);
     const { data: deliveries } = await supabase.from("metric_reminder_deliveries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date);
@@ -52,5 +64,5 @@ export async function GET(request: Request) {
       }
     }
   }
-  return Response.json({ sent, checked: data?.length ?? 0 });
+  return Response.json({ sent, checked: data.length });
 }

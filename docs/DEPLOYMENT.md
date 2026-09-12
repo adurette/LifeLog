@@ -11,7 +11,7 @@
 
 Run `npm run vapid` once. Store the public key as `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and the private key as `VAPID_PRIVATE_KEY`. Set `VAPID_SUBJECT` to an administrator email URI such as `mailto:admin@example.com`.
 
-Configure Supabase Cron to call `GET https://YOUR_APP/api/reminders` every 15 minutes with `Authorization: Bearer YOUR_CRON_SECRET`. Store the same random value as the deployment's `CRON_SECRET`.
+Configure Supabase Cron to call `GET https://YOUR_APP/api/reminders` every minute (`* * * * *`) with `Authorization: Bearer YOUR_CRON_SECRET` and a 10-second HTTP timeout. Store the same random value as the deployment's `CRON_SECRET`.
 
 Required production variables:
 
