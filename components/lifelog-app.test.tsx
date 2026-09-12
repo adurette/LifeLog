@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { AddMetricModal, DailyMetricCard, MetricCard } from "./lifelog-app";
+import { AddMetricModal, BottomNav, DailyMetricCard, MetricCard } from "./lifelog-app";
 import type { Entry, Metric } from "@/lib/types";
 
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+});
 afterEach(cleanup);
 const metric: Metric = { id: "test", name: "Test", type: "boolean", loggingMode: "daily", schedule: "daily", color: "sage" };
 
@@ -80,4 +84,51 @@ it("groups recordings under one metric heading and saves each slot independently
   fireEvent.blur(noon.getByRole("textbox"));
   expect(onSave).toHaveBeenLastCalledWith(multiple, false, undefined, "Lunch break", "12:00");
   expect((morning.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+});
+
+it("opens the sheet without focusing an input, closes with Escape, and restores focus", () => {
+  const onClose = vi.fn();
+  const trigger = document.createElement("button");
+  document.body.append(trigger);
+  trigger.focus();
+  const view = render(<AddMetricModal onClose={onClose} onAdd={vi.fn()} />);
+  expect(document.activeElement?.tagName).toBe("H2");
+  expect(document.body.style.overflow).toBe("hidden");
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  expect(onClose).toHaveBeenCalledOnce();
+  view.unmount();
+  expect(document.activeElement).toBe(trigger);
+  expect(document.body.style.overflow).toBe("");
+  trigger.remove();
+});
+
+it("exposes all five app destinations and the active screen", () => {
+  const navigate = vi.fn();
+  render(<BottomNav tab="settings" setTab={navigate} />);
+  expect(screen.getAllByRole("button")).toHaveLength(5);
+  expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.click(screen.getByRole("button", { name: "Today" }));
+  expect(navigate).toHaveBeenCalledWith("today");
+});
+
+it("saves a numeric entry when the keyboard Done action is used", () => {
+  const onSave = vi.fn();
+  render(<MetricCard metric={{ ...metric, type: "number" }} slot={{ key: "daily" }} onSave={onSave} />);
+  const input = screen.getByRole("spinbutton");
+  input.focus();
+  fireEvent.change(input, { target: { value: "7.5" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(onSave).toHaveBeenCalledWith(expect.anything(), 7.5, undefined, "", "daily");
+  expect(document.activeElement).not.toBe(input);
+});
+
+it("commits a rating after dragging instead of syncing every intermediate value", () => {
+  const onSave = vi.fn();
+  render(<MetricCard metric={{ ...metric, type: "rating" }} slot={{ key: "daily" }} onSave={onSave} />);
+  const input = screen.getByRole("slider");
+  fireEvent.change(input, { target: { value: "6" } });
+  fireEvent.change(input, { target: { value: "8" } });
+  expect(onSave).not.toHaveBeenCalled();
+  fireEvent.pointerUp(input);
+  expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.anything(), 8, undefined, "", "daily");
 });
