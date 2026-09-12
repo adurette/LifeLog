@@ -31,12 +31,14 @@ it("allows clearing a saved number, refuses empty saves, and accepts decimals an
   expect(input.value).toBe("");
   fireEvent.blur(input);
   expect(onSave).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toBe("Enter a number.");
   fireEvent.change(input, { target: { value: "7.25" } });
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(onSave).not.toHaveBeenCalled();
   fireEvent.blur(input);
   expect(onSave).toHaveBeenLastCalledWith(numeric, 7.25, undefined, "", "daily");
   view.rerender(<MetricCard metric={numeric} entry={{ ...entry, value: 7.25 }} slot={{ key: "daily" }} onSave={onSave} />);
-  expect(screen.getByRole("status").textContent).toBe("Saved automatically");
+  expect(screen.queryByText(/saved automatically/i)).toBeNull();
   expect(screen.getByRole("spinbutton")).toBe(input);
   fireEvent.change(input, { target: { value: "0" } });
   fireEvent.blur(input);
