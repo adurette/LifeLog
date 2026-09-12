@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { appearanceScript } from "@/lib/appearance";
 
 export const metadata: Metadata = {
   title: "LifeLog — Notice what shapes your days",
@@ -12,5 +13,5 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: "#f5f2ea", width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: appearanceScript }} /></head><body>{children}</body></html>;
 }
