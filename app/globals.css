@@ -56,3 +56,17 @@ button { color:inherit; }
 @media(max-width:720px){.history-entry-actions{opacity:1}.history-values{padding-left:0}.history-entry{align-items:flex-start}.history-entry>div:first-child{flex-wrap:wrap;padding:6px 0}.history-toolbar{align-items:stretch;flex-direction:column}.month-nav{justify-content:space-between}.history-toolbar>label{justify-content:space-between}.history-toolbar select{flex:1}.page-header{flex-wrap:wrap}}
 @media(max-width:620px){.onboarding{padding:14px}.onboarding-card{padding:24px}.onboarding h1{font-size:32px}.starter-grid{grid-template-columns:1fr}.weekday-picker{justify-content:space-between}}
 @media(max-width:620px){.schedule-builder{grid-template-columns:1fr}.schedule-times{grid-template-columns:1fr}.schedule-builder .notes-toggle{grid-column:1}.schedule-times>strong{grid-column:1}}
+
+/* Multiple daily recordings share one metric heading. */
+.grouped-metric { grid-column:1/-1; min-height:0; }
+.grouped-metric:hover { transform:none; }
+.group-progress { color:var(--metric); font-size:12px; font-weight:600; white-space:nowrap; padding-top:4px; }
+.check-in-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:18px; }
+.check-in-section { min-width:0; padding:16px; border:1px solid var(--line); border-radius:10px; background:color-mix(in srgb,var(--card) 75%,white); display:flex; flex-direction:column; }
+.check-in-section.complete { border-color:color-mix(in srgb,var(--metric) 35%,var(--line)); }
+.check-in-section header { grid-template-columns:1fr auto; align-items:center; min-height:23px; }
+.check-in-section h4 { margin:0; font-size:13px; color:var(--metric); }
+.check-in-section .metric-control { margin:0; }
+.check-in-section .form-help { margin-bottom:0; }
+@media(max-width:960px) { .check-in-sections { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:720px) { .check-in-sections { grid-template-columns:1fr; gap:12px; } .grouped-metric { min-height:0; } .group-progress { white-space:normal; max-width:90px; text-align:right; } }

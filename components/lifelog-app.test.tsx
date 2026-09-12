@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AddMetricModal, MetricCard } from "./lifelog-app";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { AddMetricModal, DailyMetricCard, MetricCard } from "./lifelog-app";
 import type { Entry, Metric } from "@/lib/types";
 
 afterEach(cleanup);
@@ -60,4 +60,22 @@ it("allows typing 12 check-ins without clamping intermediate input and validates
     fireEvent.change(input, { target: { value } });
     expect(input.checkValidity()).toBe(false);
   }
+});
+
+it("groups recordings under one metric heading and saves each slot independently", () => {
+  const onSave = vi.fn();
+  const multiple = { ...metric, frequency: "times" as const, timesPerDay: 3, scheduleTimes: ["08:00", "12:00", "18:00"], notesEnabled: true };
+  render(<DailyMetricCard metric={multiple} entries={[{ id: "morning", slotKey: "08:00", value: true } as Entry]} onSave={onSave} />);
+  expect(screen.getAllByRole("article")).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { name: "Test" })).toHaveLength(1);
+  expect(screen.getByText("1 of 3 recorded")).toBeTruthy();
+  const morning = within(screen.getByRole("region", { name: "08:00" }));
+  const noon = within(screen.getByRole("region", { name: "12:00" }));
+  fireEvent.click(noon.getByRole("button", { name: "No" }));
+  expect(onSave).toHaveBeenLastCalledWith(multiple, false, undefined, "", "12:00");
+  expect(morning.getByRole("button", { name: "Yes" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.change(noon.getByRole("textbox"), { target: { value: "Lunch break" } });
+  fireEvent.blur(noon.getByRole("textbox"));
+  expect(onSave).toHaveBeenLastCalledWith(multiple, false, undefined, "Lunch break", "12:00");
+  expect((morning.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
 });

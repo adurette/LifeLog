@@ -144,10 +144,21 @@ function Today({ metrics, entries, onSave, onAdd }: { metrics: Metric[]; entries
   return <div className="page"><PageHeader eyebrow={new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date())} title="How was your day?" copy="A minute of noticing adds up to a clearer picture." action={<button className="avatar-button" aria-label="Profile"><CircleUserRound size={25} /></button>} />
     <section className="progress-card"><div><span>Today’s check-in</span><strong>{done} of {scheduled.length} complete</strong></div><div className="progress-track"><span style={{ width: `${scheduled.length ? (done / scheduled.length) * 100 : 0}%` }} /></div><span className="progress-number">{scheduled.length ? Math.round(done / scheduled.length * 100) : 0}%</span></section>
     <div className="section-heading"><div><h2>Daily check-in</h2><p>Selections save immediately. Numbers and text save when you leave the field.</p></div></div>
-    <section className="metric-grid">{scheduled.map(({ metric, slot }) => { const entry = entries.find((item) => item.metricId === metric.id && item.localDate === today && (item.slotKey ?? "daily") === slot.key); return <MetricCard key={`${today}-${metric.id}-${slot.key}`} metric={metric} slot={slot} entry={entry} onSave={onSave} />; })}</section>
+    <section className="metric-grid">{due.map((metric) => <DailyMetricCard key={`${today}-${metric.id}`} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} />)}</section>
     <div className="section-heading event-heading"><div><h2>Quick log</h2><p>Capture moments as they happen.</p></div><button className="text-button" onClick={onAdd}><Plus size={16} />New metric</button></div>
     <section className="quick-row">{events.map((metric) => <QuickLog key={metric.id} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} />)}<button className="add-quick" onClick={onAdd}><Plus size={22} /><span>Add something</span></button></section>
   </div>;
+}
+
+export function DailyMetricCard({ metric, entries, onSave }: { metric: Metric; entries: Entry[]; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void }) {
+  const slots = metricSlots(metric);
+  const findEntry = (key: string) => entries.find((entry) => (entry.slotKey ?? "daily") === key);
+  if (slots.length === 1) return <MetricCard metric={metric} slot={slots[0]} entry={findEntry(slots[0].key)} onSave={onSave} />;
+  const done = slots.filter((slot) => findEntry(slot.key)).length;
+  return <article className="metric-card grouped-metric" aria-label={metric.name} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}>
+    <header><span className="metric-icon"><MetricGlyph metric={metric} /></span><div><h3>{metric.name}</h3><p>{metric.description}</p></div><span className="group-progress">{done} of {slots.length} recorded</span></header>
+    <div className="check-in-sections">{slots.map((slot) => <MetricCard key={slot.key} metric={metric} slot={slot} entry={findEntry(slot.key)} onSave={onSave} grouped />)}</div>
+  </article>;
 }
 
 function validEntryValue(metric: Metric, value: EntryValue) {
@@ -156,7 +167,7 @@ function validEntryValue(metric: Metric, value: EntryValue) {
   return String(value).trim() !== "";
 }
 
-export function MetricCard({ metric, slot, entry, onSave }: { metric: Metric; slot: { key: string; label?: string }; entry?: Entry; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void }) {
+export function MetricCard({ metric, slot, entry, onSave, grouped = false }: { grouped?: boolean; metric: Metric; slot: { key: string; label?: string }; entry?: Entry; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void }) {
   const [value, setValue] = useState<EntryValue>(entry?.value ?? (metric.type === "rating" ? Math.max(metric.ratingMin ?? 1, Math.min(5, metric.ratingMax ?? 10)) : ""));
   const [note, setNote] = useState(entry?.note ?? "");
   const valid = validEntryValue(metric, value);
@@ -169,14 +180,15 @@ export function MetricCard({ metric, slot, entry, onSave }: { metric: Metric; sl
     onSave(metric, normalized, undefined, nextNote, slot.key);
   };
   const select = (next: EntryValue) => { setValue(next); save(next); };
-  return <article className={`metric-card ${complete ? "complete" : ""}`} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}><header><span className="metric-icon"><MetricGlyph metric={metric} /></span><div><h3>{metric.name}{slot.label && <small className="slot-label">{slot.label}</small>}</h3><p>{metric.description}</p></div>{complete && <span className="check"><Check size={15} /></span>}</header>
+  const Container = grouped ? "section" : "article";
+  return <Container aria-label={grouped ? slot.label : undefined} className={`${grouped ? "check-in-section" : "metric-card"} ${complete ? "complete" : ""}`} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}><header>{!grouped && <span className="metric-icon"><MetricGlyph metric={metric} /></span>}<div>{grouped ? <h4>{slot.label}</h4> : <><h3>{metric.name}{slot.label && <small className="slot-label">{slot.label}</small>}</h3><p>{metric.description}</p></>}</div>{complete && <span className="check"><Check size={15} /></span>}</header>
     <div className="metric-control">
       {metric.type === "rating" && <div className="rating"><input aria-label={metric.name} type="range" min={metric.ratingMin ?? 1} max={metric.ratingMax ?? 10} value={Number(value)} onChange={(e) => select(Number(e.target.value))} onBlur={() => save()} onPointerUp={() => save()} /><div><span>{metric.ratingMin ?? 1}</span><strong>{value}<small>/ {metric.ratingMax ?? 10}</small></strong><span>{metric.ratingMax ?? 10}</span></div></div>}
       {metric.type === "boolean" && <div className="boolean"><button className={value === true ? "selected" : ""} aria-pressed={value === true} onClick={() => select(true)}>Yes</button><button className={value === false ? "selected" : ""} aria-pressed={value === false} onClick={() => select(false)}>No</button></div>}
       {metric.type === "number" && <label className="number-input"><input aria-label={metric.name} type="number" required step="any" value={String(value)} onChange={(e) => setValue(e.target.value)} onBlur={() => save()} /><span>{metric.unit}</span></label>}
       {metric.type === "text" && <textarea aria-label={metric.name} value={String(value)} onChange={(e) => setValue(e.target.value)} onBlur={() => save()} placeholder="Write a short note…" />}
       {metric.type === "choice" && <select aria-label={metric.name} value={String(value)} onChange={(e) => select(e.target.value)}><option value="">Choose one…</option>{metric.options?.map((option) => <option key={option}>{option}</option>)}</select>}
-    </div>{metric.notesEnabled && <div onBlur={() => save()}><NoteField value={note} onChange={setNote} /></div>}<p className="form-help" role="status">{complete ? "Saved automatically" : !valid && metric.type === "number" ? "Enter a number to save. Previous entry is kept until then." : "Choose an answer or finish editing to save."}</p></article>;
+    </div>{metric.notesEnabled && <div onBlur={() => save()}><NoteField value={note} onChange={setNote} /></div>}<p className="form-help" role="status">{complete ? "Saved automatically" : !valid && metric.type === "number" ? "Enter a number to save. Previous entry is kept until then." : "Choose an answer or finish editing to save."}</p></Container>;
 }
 
 function NoteField({ value, onChange }: { value: string; onChange: (value: string) => void }) { return <label className="entry-note">Notes <span>(optional)</span><textarea maxLength={500} value={value} onChange={(event) => onChange(event.target.value)} placeholder="Add context for this entry…" /></label>; }
