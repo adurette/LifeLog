@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type SubscriptionRow = { id: string; user_id: string; endpoint: string; p256dh: string; auth: string };
 type MetricRow = { id: string; user_id: string; name: string; schedule: "daily" | "weekdays" | "flexible"; weekdays: number[] | null; frequency: "once" | "times" | "interval"; interval_hours: number; schedule_times: string[] };
 type EntryRow = { metric_id: string; slot_key: string };
-type ProfileRow = { id: string; timezone: string; push_subscriptions: SubscriptionRow[]; metrics: MetricRow[]; entries: EntryRow[]; deliveries: EntryRow[] };
+type ProfileRow = { id: string; timezone: string; daily_reminder_enabled: boolean; reminder_time: string; last_reminded_on: string | null; push_subscriptions: SubscriptionRow[]; metrics: MetricRow[]; entries: EntryRow[]; deliveries: EntryRow[] };
 type QueryResult = { error: { message: string } | null };
 
 async function withGatewayRetry<T extends QueryResult>(query: () => PromiseLike<T>, attempts = 3): Promise<T> {
@@ -46,6 +46,23 @@ async function processReminders(url: string, serviceKey: string, publicKey: stri
   const now = new Date(); let sent = 0;
   for (const profile of data) {
     const local = localNow(now, profile.timezone); const weekday = new Date(`${local.date}T12:00:00Z`).getUTCDay();
+    const [dailyHour, dailyMinute] = profile.reminder_time.split(":").map(Number); const dailyTarget = dailyHour * 60 + dailyMinute;
+    if (profile.daily_reminder_enabled && profile.last_reminded_on !== local.date && local.minutes >= dailyTarget && local.minutes - dailyTarget <= 14) {
+      let delivered = false;
+      for (const subscription of profile.push_subscriptions) {
+        try {
+          await webPush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({ title: "Time for your LifeLog", body: "Take a moment to fill out today’s metrics.", url: "/", tag: `daily-${profile.id}-${local.date}` }), { timeout: 1500 }); delivered = true; sent += 1;
+        } catch (pushError) {
+          console.error("Daily reminder push failed", pushError);
+          const status = typeof pushError === "object" && pushError && "statusCode" in pushError ? Number(pushError.statusCode) : 0;
+          if (status === 404 || status === 410) await supabase.from("push_subscriptions").delete().eq("id", subscription.id);
+        }
+      }
+      if (delivered) {
+        const { error: deliveryError } = await withGatewayRetry(() => supabase.rpc("mark_daily_reminder_delivered", { target_user_id: profile.id, target_date: local.date }));
+        if (deliveryError) console.error("Daily reminder delivery record failed", deliveryError);
+      }
+    }
     for (const metric of profile.metrics) {
       if (metric.schedule === "flexible" || (metric.schedule === "weekdays" && !metric.weekdays?.includes(weekday))) continue;
       for (const time of reminderTimes(metric)) {
