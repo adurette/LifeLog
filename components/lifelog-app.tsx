@@ -109,6 +109,17 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
     document.addEventListener("focusout", update);
     return () => { viewport?.removeEventListener("resize", update); viewport?.removeEventListener("scroll", update); document.removeEventListener("focusout", update); document.documentElement.classList.remove("keyboard-open"); };
   }, []);
+  useEffect(() => {
+    if (!userId) return;
+    const syncTimezone = () => {
+      if (document.visibilityState === "hidden") return;
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      void getSupabase()?.from("profiles").update({ timezone }).eq("id", userId);
+    };
+    syncTimezone();
+    document.addEventListener("visibilitychange", syncTimezone);
+    return () => document.removeEventListener("visibilitychange", syncTimezone);
+  }, [userId]);
   const [showAdd, setShowAdd] = useState(false);
   const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
@@ -121,7 +132,7 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
 
   const active = data.metrics.filter((metric) => !metric.archived);
   if (!ready) return <div className="auth-screen" role="status"><Brand /><p>Opening your record…</p></div>;
-  if (userId && ready && data.metrics.length === 0) return <Onboarding onFinish={(metrics, timezone) => { metrics.forEach(addMetric); void getSupabase()?.from("profiles").update({ timezone }).eq("id", userId); }} />;
+  if (userId && ready && data.metrics.length === 0) return <Onboarding onFinish={(metrics) => metrics.forEach(addMetric)} />;
   return (
     <div className="app-shell">
       <Sidebar tab={tab} setTab={setTab} online={online} syncStatus={syncStatus} pendingCount={pendingCount} onSync={syncNow} />
@@ -360,10 +371,10 @@ const STARTERS: Omit<Metric, "id">[] = [
   { name: "Daily note", description: "Anything worth remembering", type: "text", loggingMode: "daily", schedule: "daily", color: "rose" },
 ];
 
-function Onboarding({ onFinish }: { onFinish: (metrics: Metric[], timezone: string) => void }) {
-  const [selected, setSelected] = useState([0, 1, 2]); const [custom, setCustom] = useState<Metric[]>([]); const [showCustom, setShowCustom] = useState(false); const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+function Onboarding({ onFinish }: { onFinish: (metrics: Metric[]) => void }) {
+  const [selected, setSelected] = useState([0, 1, 2]); const [custom, setCustom] = useState<Metric[]>([]); const [showCustom, setShowCustom] = useState(false);
   const toggle = (index: number) => setSelected((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index]);
-  return <main className="onboarding"><div className="onboarding-card"><Brand /><span className="eyebrow">Welcome to your LifeLog</span><h1>Start with a few useful questions.</h1><p>Choose suggestions or create your own metrics now.</p><div className="starter-grid">{STARTERS.map((metric, index) => <button key={metric.name} className={selected.includes(index) ? "selected" : ""} onClick={() => toggle(index)}><span className="metric-icon" style={{ color: COLORS[metric.color], background: `${COLORS[metric.color]}18` }}><MetricGlyph metric={{ ...metric, id: String(index) }} /></span><span><strong>{metric.name}</strong><small>{metric.description}</small></span>{selected.includes(index) && <Check size={16} />}</button>)}{custom.map((metric) => <button key={metric.id} className="selected" onClick={() => setCustom((items) => items.filter((item) => item.id !== metric.id))}><span className="metric-icon" style={{ color: COLORS[metric.color], background: `${COLORS[metric.color]}18` }}><MetricGlyph metric={metric} /></span><span><strong>{metric.name}</strong><small>Custom metric · click to remove</small></span><Check size={16} /></button>)}</div><button className="secondary onboarding-custom" onClick={() => setShowCustom(true)}><Plus size={16} />Create a custom metric</button><label className="timezone-field">Your timezone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option>{timezone}</option><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option><option>UTC</option></select></label><button className="primary onboarding-continue" disabled={selected.length + custom.length === 0} onClick={() => onFinish([...selected.map((index) => ({ ...STARTERS[index], id: crypto.randomUUID() })), ...custom], timezone)}>Start my first check-in<ChevronRight size={17} /></button></div>{showCustom && <AddMetricModal onClose={() => setShowCustom(false)} onAdd={(metric) => { setCustom((items) => [...items, metric]); setShowCustom(false); }} />}</main>;
+  return <main className="onboarding"><div className="onboarding-card"><Brand /><span className="eyebrow">Welcome to your LifeLog</span><h1>Start with a few useful questions.</h1><p>Choose suggestions or create your own metrics now.</p><div className="starter-grid">{STARTERS.map((metric, index) => <button key={metric.name} className={selected.includes(index) ? "selected" : ""} onClick={() => toggle(index)}><span className="metric-icon" style={{ color: COLORS[metric.color], background: `${COLORS[metric.color]}18` }}><MetricGlyph metric={{ ...metric, id: String(index) }} /></span><span><strong>{metric.name}</strong><small>{metric.description}</small></span>{selected.includes(index) && <Check size={16} />}</button>)}{custom.map((metric) => <button key={metric.id} className="selected" onClick={() => setCustom((items) => items.filter((item) => item.id !== metric.id))}><span className="metric-icon" style={{ color: COLORS[metric.color], background: `${COLORS[metric.color]}18` }}><MetricGlyph metric={metric} /></span><span><strong>{metric.name}</strong><small>Custom metric · click to remove</small></span><Check size={16} /></button>)}</div><button className="secondary onboarding-custom" onClick={() => setShowCustom(true)}><Plus size={16} />Create a custom metric</button><p className="form-help">Reminder times automatically follow this device’s current timezone.</p><button className="primary onboarding-continue" disabled={selected.length + custom.length === 0} onClick={() => onFinish([...selected.map((index) => ({ ...STARTERS[index], id: crypto.randomUUID() })), ...custom])}>Start my first check-in<ChevronRight size={17} /></button></div>{showCustom && <AddMetricModal onClose={() => setShowCustom(false)} onAdd={(metric) => { setCustom((items) => [...items, metric]); setShowCustom(false); }} />}</main>;
 }
 
 export function AddMetricModal({ initial, onClose, onAdd }: { initial?: Metric; onClose: () => void; onAdd: (metric: Metric) => void }) {
