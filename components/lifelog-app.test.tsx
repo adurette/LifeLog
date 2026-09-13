@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { AddMetricModal, BottomNav, DailyMetricCard, MetricCard } from "./lifelog-app";
+import { AddMetricModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard } from "./lifelog-app";
 import type { Entry, Metric } from "@/lib/types";
 
 beforeAll(() => {
@@ -47,6 +47,29 @@ it("allows clearing a saved number, refuses empty saves, and accepts decimals an
   fireEvent.change(input, { target: { value: "0" } });
   fireEvent.blur(input);
   expect(onSave).toHaveBeenLastCalledWith(numeric, 0, undefined, "", "daily");
+});
+
+it("adjusts a daily number by one with minus and plus buttons", () => {
+  const onSave = vi.fn();
+  const numeric = { ...metric, type: "number" as const };
+  const view = render(<MetricCard metric={numeric} entry={{ id: "old", value: 3 } as Entry} slot={{ key: "daily" }} onSave={onSave} />);
+  fireEvent.click(screen.getByRole("button", { name: "Increase Test by 1" }));
+  expect(onSave).toHaveBeenLastCalledWith(numeric, 4, undefined, "", "daily");
+  view.rerender(<MetricCard metric={numeric} entry={{ id: "old", value: 4 } as Entry} slot={{ key: "daily" }} onSave={onSave} />);
+  fireEvent.click(screen.getByRole("button", { name: "Decrease Test by 1" }));
+  expect(onSave).toHaveBeenLastCalledWith(numeric, 3, undefined, "", "daily");
+});
+
+it("increments and reverses event metrics from a full-size metric card", () => {
+  const onSave = vi.fn(); const onUpdate = vi.fn(); const onDelete = vi.fn();
+  const coffee = { ...metric, name: "Coffee", type: "number" as const, loggingMode: "event" as const, unit: "cups" };
+  const entry = { id: "cup", value: 1 } as Entry;
+  render(<EventMetricCard metric={coffee} entries={[entry]} onSave={onSave} onUpdate={onUpdate} onDelete={onDelete} />);
+  expect(screen.getByText("1")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Increase Coffee by 1" }));
+  expect(onSave).toHaveBeenCalledWith(coffee, 1, undefined, "");
+  fireEvent.click(screen.getByRole("button", { name: "Decrease Coffee by 1" }));
+  expect(onDelete).toHaveBeenCalledWith(entry);
 });
 
 it("allows typing 12 check-ins without clamping intermediate input and validates limits", () => {
