@@ -66,6 +66,12 @@ button { color:inherit; }
 .check-in-sections { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:18px; }
 .check-in-section { min-width:0; padding:16px; border:1px solid var(--line); border-radius:10px; background:color-mix(in srgb,var(--card) 75%,white); display:flex; flex-direction:column; }
 .check-in-section.complete { border-color:color-mix(in srgb,var(--metric) 35%,var(--line)); }
+.metric-card.waiting,.check-in-section.waiting { background:color-mix(in srgb,var(--card) 62%,var(--line)); border-color:var(--line); box-shadow:none; }
+.metric-card.waiting:hover { transform:none; box-shadow:none; }
+.metric-card.waiting header,.check-in-section.waiting header { opacity:.58; }
+.metric-waiting { flex:1; display:grid; place-content:center; justify-items:center; gap:10px; padding:24px 0 4px; text-align:center; }
+.metric-waiting p { margin:0; color:var(--muted); font-size:12px; }
+.metric-waiting .secondary { min-height:38px; padding:8px 13px; }
 .check-in-section header { grid-template-columns:1fr auto; align-items:center; min-height:23px; }
 .check-in-section h4 { margin:0; font-size:13px; color:var(--metric); }
 .check-in-section .metric-control { margin:0; }

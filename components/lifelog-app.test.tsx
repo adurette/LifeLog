@@ -71,7 +71,7 @@ it("allows typing 12 check-ins without clamping intermediate input and validates
 it("groups recordings under one metric heading and saves each slot independently", () => {
   const onSave = vi.fn();
   const multiple = { ...metric, frequency: "times" as const, timesPerDay: 3, scheduleTimes: ["08:00", "12:00", "18:00"], notesEnabled: true };
-  render(<DailyMetricCard metric={multiple} entries={[{ id: "morning", slotKey: "08:00", value: true } as Entry]} onSave={onSave} />);
+  render(<DailyMetricCard metric={multiple} entries={[{ id: "morning", slotKey: "08:00", value: true } as Entry]} onSave={onSave} nowMinutes={24 * 60} />);
   expect(screen.getAllByRole("article")).toHaveLength(1);
   expect(screen.getAllByRole("heading", { name: "Test" })).toHaveLength(1);
   expect(screen.getByText("1 of 3 recorded")).toBeTruthy();
@@ -84,6 +84,22 @@ it("groups recordings under one metric heading and saves each slot independently
   fireEvent.blur(noon.getByRole("textbox"));
   expect(onSave).toHaveBeenLastCalledWith(multiple, false, undefined, "Lunch break", "12:00");
   expect((morning.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+});
+
+it("holds future check-ins until their scheduled time but allows an explicit override", () => {
+  const onSave = vi.fn();
+  render(<DailyMetricCard metric={{ ...metric, scheduleTimes: ["18:00"] }} entries={[]} onSave={onSave} nowMinutes={12 * 60} />);
+  expect(screen.queryByRole("button", { name: "Yes" })).toBeNull();
+  expect(screen.getByText("Available at 6:00 PM")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Set it now" }));
+  fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+  expect(onSave).toHaveBeenCalledWith(expect.anything(), true, undefined, "", "18:00");
+});
+
+it("keeps a completed future check-in available for review", () => {
+  render(<DailyMetricCard metric={{ ...metric, scheduleTimes: ["18:00"] }} entries={[{ id: "done", slotKey: "18:00", value: true } as Entry]} onSave={vi.fn()} nowMinutes={12 * 60} />);
+  expect(screen.getByRole("button", { name: "Yes" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.queryByRole("button", { name: "Set it now" })).toBeNull();
 });
 
 it("opens the sheet without focusing an input, closes with Escape, and restores focus", () => {

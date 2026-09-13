@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 type SubscriptionRow = { id: string; user_id: string; endpoint: string; p256dh: string; auth: string };
 type MetricRow = { id: string; user_id: string; name: string; schedule: "daily" | "weekdays" | "flexible"; weekdays: number[] | null; frequency: "once" | "times" | "interval"; interval_hours: number; schedule_times: string[] };
 type ProfileRow = { id: string; timezone: string; push_subscriptions: SubscriptionRow[]; metrics: MetricRow[] };
+type EntryRow = { metric_id: string; slot_key: string };
 
 function localNow(now: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
@@ -18,6 +19,10 @@ function reminderTimes(metric: MetricRow) {
   const start = metric.schedule_times[0]; if (!start) return [];
   const first = Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)); const step = Math.max(1, metric.interval_hours) * 60;
   return Array.from({ length: Math.ceil((1440 - first) / step) }, (_, index) => { const minutes = first + index * step; return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`; });
+}
+
+export function checkInIsComplete(metric: MetricRow, time: string, entries: EntryRow[]) {
+  return entries.some((entry) => entry.metric_id === metric.id && (metric.frequency === "once" || entry.slot_key === time));
 }
 
 export async function GET(request: Request) {
@@ -50,10 +55,10 @@ export async function GET(request: Request) {
     ]);
     if (entriesError || deliveriesError) { console.error("Reminder history query failed", entriesError ?? deliveriesError); return Response.json({ error: entriesError?.message ?? deliveriesError?.message }, { status: 500 }); }
     for (const metric of profile.metrics) {
-      if (metric.schedule === "weekdays" && !metric.weekdays?.includes(weekday)) continue;
+      if (metric.schedule === "flexible" || (metric.schedule === "weekdays" && !metric.weekdays?.includes(weekday))) continue;
       for (const time of reminderTimes(metric)) {
         const [hour, minute] = time.split(":").map(Number); const target = hour * 60 + minute;
-        if (local.minutes < target || local.minutes - target > 14 || entries?.some((entry) => entry.metric_id === metric.id && entry.slot_key === time) || deliveries?.some((delivery) => delivery.metric_id === metric.id && delivery.slot_key === time)) continue;
+        if (local.minutes < target || local.minutes - target > 14 || checkInIsComplete(metric, time, entries ?? []) || deliveries?.some((delivery) => delivery.metric_id === metric.id && delivery.slot_key === time)) continue;
         let delivered = false;
         for (const subscription of profile.push_subscriptions) {
           try {
