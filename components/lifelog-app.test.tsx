@@ -76,7 +76,7 @@ it("confirms metric deletion and explains that past entries remain", () => {
   const onArchive = vi.fn(); const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(<MetricsView metrics={[metric]} entries={[{ id: "past", metricId: metric.id } as Entry]} onAdd={vi.fn()} onEdit={vi.fn()} onArchive={onArchive} onRestore={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "Delete Test" }));
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("1 past entry will remain in History"));
+  expect(confirm).toHaveBeenCalledWith("Delete Test? It will be removed from Today's tracking page, but previous entries will still be saved. You can restore the metric later from Archived if desired.");
   expect(onArchive).not.toHaveBeenCalled();
   confirm.mockReturnValue(true);
   fireEvent.click(screen.getByRole("button", { name: "Delete Test" }));
