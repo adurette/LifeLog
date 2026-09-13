@@ -8,6 +8,16 @@ type SubscriptionRow = { id: string; user_id: string; endpoint: string; p256dh: 
 type MetricRow = { id: string; user_id: string; name: string; schedule: "daily" | "weekdays" | "flexible"; weekdays: number[] | null; frequency: "once" | "times" | "interval"; interval_hours: number; schedule_times: string[] };
 type ProfileRow = { id: string; timezone: string; push_subscriptions: SubscriptionRow[]; metrics: MetricRow[] };
 type EntryRow = { metric_id: string; slot_key: string };
+type QueryResult = { error: { message: string } | null };
+
+async function withGatewayRetry<T extends QueryResult>(query: () => PromiseLike<T>, attempts = 3): Promise<T> {
+  let result = await query();
+  for (let attempt = 1; result.error?.message === "Gateway Timeout" && attempt < attempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    result = await query();
+  }
+  return result;
+}
 
 function localNow(now: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
@@ -29,13 +39,13 @@ export function checkInIsComplete(metric: MetricRow, time: string, entries: Entr
 async function processReminders(url: string, serviceKey: string, publicKey: string, privateKey: string) {
   webPush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:admin@example.com", publicKey, privateKey);
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data: profileRows, error: profileError } = await supabase.from("profiles").select("id, timezone").eq("reminders_enabled", true);
+  const { data: profileRows, error: profileError } = await withGatewayRetry(() => supabase.from("profiles").select("id, timezone").eq("reminders_enabled", true));
   if (profileError) throw new Error(`Reminder profiles query failed: ${profileError.message}`);
   if (!profileRows?.length) { console.info("Reminder worker finished", { sent: 0, checked: 0 }); return; }
   const userIds = profileRows.map((profile) => profile.id);
   const [{ data: subscriptionRows, error: subscriptionError }, { data: metricRows, error: metricError }] = await Promise.all([
-    supabase.from("push_subscriptions").select("id, user_id, endpoint, p256dh, auth").in("user_id", userIds),
-    supabase.from("metrics").select("id, user_id, name, schedule, weekdays, frequency, interval_hours, schedule_times").in("user_id", userIds).eq("notifications_enabled", true).is("archived_at", null),
+    withGatewayRetry(() => supabase.from("push_subscriptions").select("id, user_id, endpoint, p256dh, auth").in("user_id", userIds)),
+    withGatewayRetry(() => supabase.from("metrics").select("id, user_id, name, schedule, weekdays, frequency, interval_hours, schedule_times").in("user_id", userIds).eq("notifications_enabled", true).is("archived_at", null)),
   ]);
   if (subscriptionError || metricError) throw new Error(`Reminder setup query failed: ${subscriptionError?.message ?? metricError?.message}`);
   const data: ProfileRow[] = profileRows.map((profile) => ({
@@ -47,8 +57,8 @@ async function processReminders(url: string, serviceKey: string, publicKey: stri
   for (const profile of data) {
     const local = localNow(now, profile.timezone); const weekday = new Date(`${local.date}T12:00:00Z`).getUTCDay();
     const [{ data: entries, error: entriesError }, { data: deliveries, error: deliveriesError }] = await Promise.all([
-      supabase.from("entries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date),
-      supabase.from("metric_reminder_deliveries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date),
+      withGatewayRetry(() => supabase.from("entries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date)),
+      withGatewayRetry(() => supabase.from("metric_reminder_deliveries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date)),
     ]);
     if (entriesError || deliveriesError) throw new Error(`Reminder history query failed: ${entriesError?.message ?? deliveriesError?.message}`);
     for (const metric of profile.metrics) {
