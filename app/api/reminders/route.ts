@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 import webPush from "web-push";
 
 export const dynamic = "force-dynamic";
@@ -25,22 +26,18 @@ export function checkInIsComplete(metric: MetricRow, time: string, entries: Entr
   return entries.some((entry) => entry.metric_id === metric.id && (metric.frequency === "once" || entry.slot_key === time));
 }
 
-export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY; const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (!url || !serviceKey || !publicKey || !privateKey) return Response.json({ error: "Reminder environment is incomplete" }, { status: 503 });
+async function processReminders(url: string, serviceKey: string, publicKey: string, privateKey: string) {
   webPush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:admin@example.com", publicKey, privateKey);
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
   const { data: profileRows, error: profileError } = await supabase.from("profiles").select("id, timezone").eq("reminders_enabled", true);
-  if (profileError) { console.error("Reminder profiles query failed", profileError); return Response.json({ error: profileError.message }, { status: 500 }); }
-  if (!profileRows?.length) return Response.json({ sent: 0, checked: 0 });
+  if (profileError) throw new Error(`Reminder profiles query failed: ${profileError.message}`);
+  if (!profileRows?.length) { console.info("Reminder worker finished", { sent: 0, checked: 0 }); return; }
   const userIds = profileRows.map((profile) => profile.id);
   const [{ data: subscriptionRows, error: subscriptionError }, { data: metricRows, error: metricError }] = await Promise.all([
     supabase.from("push_subscriptions").select("id, user_id, endpoint, p256dh, auth").in("user_id", userIds),
     supabase.from("metrics").select("id, user_id, name, schedule, weekdays, frequency, interval_hours, schedule_times").in("user_id", userIds).eq("notifications_enabled", true).is("archived_at", null),
   ]);
-  if (subscriptionError || metricError) { console.error("Reminder setup query failed", subscriptionError ?? metricError); return Response.json({ error: subscriptionError?.message ?? metricError?.message }, { status: 500 }); }
+  if (subscriptionError || metricError) throw new Error(`Reminder setup query failed: ${subscriptionError?.message ?? metricError?.message}`);
   const data: ProfileRow[] = profileRows.map((profile) => ({
     ...profile,
     push_subscriptions: (subscriptionRows as SubscriptionRow[] | null)?.filter((subscription) => subscription.user_id === profile.id) ?? [],
@@ -53,7 +50,7 @@ export async function GET(request: Request) {
       supabase.from("entries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date),
       supabase.from("metric_reminder_deliveries").select("metric_id, slot_key").eq("user_id", profile.id).eq("local_date", local.date),
     ]);
-    if (entriesError || deliveriesError) { console.error("Reminder history query failed", entriesError ?? deliveriesError); return Response.json({ error: entriesError?.message ?? deliveriesError?.message }, { status: 500 }); }
+    if (entriesError || deliveriesError) throw new Error(`Reminder history query failed: ${entriesError?.message ?? deliveriesError?.message}`);
     for (const metric of profile.metrics) {
       if (metric.schedule === "flexible" || (metric.schedule === "weekdays" && !metric.weekdays?.includes(weekday))) continue;
       for (const time of reminderTimes(metric)) {
@@ -73,5 +70,14 @@ export async function GET(request: Request) {
       }
     }
   }
-  return Response.json({ sent, checked: data.length });
+  console.info("Reminder worker finished", { sent, checked: data.length });
+}
+
+export async function GET(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY; const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!url || !serviceKey || !publicKey || !privateKey) return Response.json({ error: "Reminder environment is incomplete" }, { status: 503 });
+  after(() => processReminders(url, serviceKey, publicKey, privateKey));
+  return Response.json({ queued: true });
 }
