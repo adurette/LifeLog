@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { AddMetricModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard } from "./lifelog-app";
+import { AddMetricModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard, MetricsView } from "./lifelog-app";
 import type { Entry, Metric } from "@/lib/types";
 
 beforeAll(() => {
@@ -70,6 +70,18 @@ it("increments and reverses event metrics from a full-size metric card", () => {
   expect(onSave).toHaveBeenCalledWith(coffee, 1, undefined, "");
   fireEvent.click(screen.getByRole("button", { name: "Decrease Coffee by 1" }));
   expect(onDelete).toHaveBeenCalledWith(entry);
+});
+
+it("confirms metric deletion and explains that past entries remain", () => {
+  const onArchive = vi.fn(); const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<MetricsView metrics={[metric]} entries={[{ id: "past", metricId: metric.id } as Entry]} onAdd={vi.fn()} onEdit={vi.fn()} onArchive={onArchive} onRestore={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Delete Test" }));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("1 past entry will remain in History"));
+  expect(onArchive).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole("button", { name: "Delete Test" }));
+  expect(onArchive).toHaveBeenCalledWith(metric.id);
+  confirm.mockRestore();
 });
 
 it("allows typing 12 check-ins without clamping intermediate input and validates limits", () => {
