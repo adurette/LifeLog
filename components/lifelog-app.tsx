@@ -20,7 +20,8 @@ type SyncStatus = "local" | "syncing" | "synced" | "pending" | "error";
 const STORE_KEY = "lifelog-v1";
 const cloudStoreKey = (userId: string) => `lifelog-v1:${userId}`;
 const COLORS: Record<MetricColor, string> = { sage: "#47715b", amber: "#b66b2c", blue: "#3f6f91", rose: "#a65364", violet: "#6e5a8a" };
-const day = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const day = (date = new Date()) => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+const previousDay = () => { const date = new Date(); date.setDate(date.getDate() - 1); return day(date); };
 const prettyDate = (date: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 function MetricGlyph({ metric, size = 19 }: { metric: Metric; size?: number }) { if (metric.id === "coffee") return <Coffee size={size} />; if (metric.type === "boolean") return <Target size={size} />; if (metric.type === "rating") return <Sparkles size={size} />; return <SlidersHorizontal size={size} />; }
 
@@ -152,15 +153,23 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
 }
 
 function AuthScreen() {
-  const [email, setEmail] = useState(""); const [sent, setSent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const [email, setEmail] = useState(""); const [code, setCode] = useState(""); const [sent, setSent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [resendIn, setResendIn] = useState(0);
+  useEffect(() => { if (!resendIn) return; const timer = window.setTimeout(() => setResendIn((seconds) => seconds - 1), 1_000); return () => window.clearTimeout(timer); }, [resendIn]);
+  const requestLink = async () => {
+    const supabase = getSupabase(); if (!supabase || busy) return;
+    setBusy(true); setError("");
+    try { const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } }); if (error) setError(error.message); else { setSent(true); setResendIn(60); } }
+    catch { setError("Couldn’t send your code. Check your connection and try again."); }
+    finally { setBusy(false); }
+  };
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault(); const supabase = getSupabase(); if (!supabase || busy) return;
     setBusy(true); setError("");
-    try { const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.origin } }); if (error) setError(error.message); else setSent(true); }
-    catch { setError("Couldn’t send your link. Check your connection and try again."); }
+    try { const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: "email" }); if (error) setError(error.message); }
+    catch { setError("Couldn’t verify that code. Check your connection and try again."); }
     finally { setBusy(false); }
   };
-  return <div className="auth-screen"><div className="auth-card"><Brand /><span className="eyebrow">Your private record</span><h1>Notice what shapes your days.</h1><p>Track what matters to you, then gently explore the patterns over time.</p>{sent ? <div className="email-sent" role="status"><Check size={18} />Check your email for your secure sign-in link.</div> : <form onSubmit={signIn}><label>Email address<input type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>{error && <p className="field-error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Sending link…" : "Continue with email"}</button></form>}<small>Your data stays private to your account.</small></div></div>;
+  return <div className="auth-screen"><div className="auth-card"><Brand /><span className="eyebrow">Your private record</span><h1>Notice what shapes your days.</h1><p>Track what matters to you, then gently explore the patterns over time.</p>{sent ? <><div className="email-sent" role="status"><Check size={18} />We sent a sign-in code to {email.trim()}.</div><form onSubmit={signIn}><label>Sign-in code<input type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label>{error && <p className="field-error" role="alert">{error}</p>}<button className="primary" disabled={busy || code.length !== 6}>{busy ? "Signing in…" : "Sign in"}</button></form><div className="auth-actions"><button className="text-button" type="button" disabled={busy || resendIn > 0} onClick={() => void requestLink()}>{resendIn ? `Resend in ${resendIn}s` : "Resend code"}</button><button className="text-button" type="button" disabled={busy} onClick={() => { setSent(false); setCode(""); setError(""); }}>Use another email</button></div></> : <form onSubmit={(event) => { event.preventDefault(); void requestLink(); }}><label>Email address<input type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>{error && <p className="field-error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Sending code…" : "Continue with email"}</button></form>}<small>Your data stays private to your account.</small></div></div>;
 }
 
 function Brand() { return <div className="brand"><span className="brand-mark"><span /></span><span>LifeLog</span></div>; }
@@ -191,9 +200,24 @@ function metricSlots(metric: Metric) {
   return Array.from({ length: Math.max(1, count) }, (_, index) => ({ key: metric.scheduleTimes?.[index] || (count === 1 ? "daily" : `slot-${index + 1}`), label: metric.scheduleTimes?.[index] || (count === 1 ? undefined : `Check-in ${index + 1}`) }));
 }
 
+function minutesForTime(time?: string) {
+  if (!time || !/^\d{2}:\d{2}$/.test(time)) return null;
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function displayTime(time: string) {
+  const minutes = minutesForTime(time);
+  if (minutes === null) return time;
+  const date = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60);
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
 function Today({ metrics, entries, onSave, onAdd }: { metrics: Metric[]; entries: Entry[]; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void; onAdd: () => void }) {
   const [today, setToday] = useState(day);
-  useEffect(() => { const refresh = () => setToday(day()); const timer = window.setInterval(refresh, 60_000); document.addEventListener("visibilitychange", refresh); return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); }; }, []);
+  const [nowMinutes, setNowMinutes] = useState(() => { const now = new Date(); return now.getHours() * 60 + now.getMinutes(); });
+  const [addingPast, setAddingPast] = useState(false);
+  useEffect(() => { const refresh = () => { const now = new Date(); setToday(day()); setNowMinutes(now.getHours() * 60 + now.getMinutes()); }; const timer = window.setInterval(refresh, 60_000); document.addEventListener("visibilitychange", refresh); return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); }; }, []);
   const weekday = new Date().getDay();
   const due = metrics.filter((metric) => metric.loggingMode === "daily" && (metric.schedule === "daily" || (metric.schedule === "weekdays" && metric.weekdays?.includes(weekday))));
   const events = metrics.filter((metric) => metric.loggingMode === "event");
@@ -201,21 +225,23 @@ function Today({ metrics, entries, onSave, onAdd }: { metrics: Metric[]; entries
   const done = scheduled.filter(({ metric, slot }) => entries.some((entry) => entry.metricId === metric.id && entry.localDate === today && (entry.slotKey ?? "daily") === slot.key)).length;
   return <div className="page"><PageHeader eyebrow={new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date())} title="How was your day?" copy="A minute of noticing adds up to a clearer picture." />
     <section className="progress-card"><div><span>Today’s check-in</span><strong>{done} of {scheduled.length} complete</strong></div><div className="progress-track"><span style={{ width: `${scheduled.length ? (done / scheduled.length) * 100 : 0}%` }} /></div><span className="progress-number">{scheduled.length ? Math.round(done / scheduled.length * 100) : 0}%</span></section>
-    <div className="section-heading"><div><h2>Daily check-in</h2><p>Changes save as you go.</p></div></div>
-    {due.length === 0 && <div className="empty-state"><Check size={28} /><h2>Nothing scheduled today</h2><p>Add a metric or record an entry from History.</p><button className="secondary" onClick={onAdd}>Add a metric</button></div>}<section className="metric-grid">{due.map((metric) => <DailyMetricCard key={`${today}-${metric.id}`} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} />)}</section>
+    <div className="section-heading"><div><h2>Daily check-in</h2><p>Changes save as you go.</p></div><button className="text-button" onClick={() => setAddingPast(true)}><CalendarDays size={16} />Add past entry</button></div>
+    {due.length === 0 && <div className="empty-state"><Check size={28} /><h2>Nothing scheduled today</h2><p>Add a metric or record an entry from History.</p><button className="secondary" onClick={onAdd}>Add a metric</button></div>}<section className="metric-grid">{due.map((metric) => <DailyMetricCard key={`${today}-${metric.id}`} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} nowMinutes={nowMinutes} />)}</section>
     <div className="section-heading event-heading"><div><h2>Quick log</h2><p>Capture moments as they happen.</p></div><button className="text-button" onClick={onAdd}><Plus size={16} />New metric</button></div>
     <section className="quick-row">{events.map((metric) => <QuickLog key={metric.id} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} />)}<button className="add-quick" onClick={onAdd}><Plus size={22} /><span>Add something</span></button></section>
+    {addingPast && <BackfillModal metrics={metrics} onClose={() => setAddingPast(false)} onSave={(metric, value, date, note, slotKey) => { onSave(metric, value, date, note, slotKey); setAddingPast(false); }} />}
   </div>;
 }
 
-export function DailyMetricCard({ metric, entries, onSave }: { metric: Metric; entries: Entry[]; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void }) {
+export function DailyMetricCard({ metric, entries, onSave, nowMinutes = new Date().getHours() * 60 + new Date().getMinutes() }: { metric: Metric; entries: Entry[]; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void; nowMinutes?: number }) {
   const slots = metricSlots(metric);
   const findEntry = (key: string) => entries.find((entry) => (entry.slotKey ?? "daily") === key);
-  if (slots.length === 1) return <MetricCard metric={metric} slot={slots[0]} entry={findEntry(slots[0].key)} onSave={onSave} />;
+  const isFuture = (slot: { key: string }) => { const scheduled = minutesForTime(slot.key); return scheduled !== null && nowMinutes < scheduled; };
+  if (slots.length === 1) return <MetricCard metric={metric} slot={slots[0]} entry={findEntry(slots[0].key)} onSave={onSave} locked={isFuture(slots[0])} />;
   const done = slots.filter((slot) => findEntry(slot.key)).length;
   return <article className="metric-card grouped-metric" aria-label={metric.name} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}>
     <header><span className="metric-icon"><MetricGlyph metric={metric} /></span><div><h3>{metric.name}</h3><p>{metric.description}</p></div><span className="group-progress">{done} of {slots.length} recorded</span></header>
-    <div className="check-in-sections">{slots.map((slot) => <MetricCard key={slot.key} metric={metric} slot={slot} entry={findEntry(slot.key)} onSave={onSave} grouped />)}</div>
+    <div className="check-in-sections">{slots.map((slot) => <MetricCard key={slot.key} metric={metric} slot={slot} entry={findEntry(slot.key)} onSave={onSave} grouped locked={isFuture(slot)} />)}</div>
   </article>;
 }
 
@@ -225,10 +251,12 @@ function validEntryValue(metric: Metric, value: EntryValue) {
   return String(value).trim() !== "";
 }
 
-export function MetricCard({ metric, slot, entry, onSave, grouped = false }: { grouped?: boolean; metric: Metric; slot: { key: string; label?: string }; entry?: Entry; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void }) {
+export function MetricCard({ metric, slot, entry, onSave, grouped = false, locked = false }: { grouped?: boolean; locked?: boolean; metric: Metric; slot: { key: string; label?: string }; entry?: Entry; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void }) {
   const [value, setValue] = useState<EntryValue>(entry?.value ?? (metric.type === "rating" ? Math.max(metric.ratingMin ?? 1, Math.min(5, metric.ratingMax ?? 10)) : ""));
   const [note, setNote] = useState(entry?.note ?? "");
   const [showNumberError, setShowNumberError] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const waiting = locked && !entry && !unlocked;
   const valid = validEntryValue(metric, value);
   const savedValue = metric.type === "number" ? Number(value) : value;
   const complete = Boolean(entry) && valid && entry?.value === savedValue && (entry?.note ?? "") === note.trim();
@@ -240,14 +268,14 @@ export function MetricCard({ metric, slot, entry, onSave, grouped = false }: { g
   };
   const select = (next: EntryValue) => { setValue(next); save(next); };
   const Container = grouped ? "section" : "article";
-  return <Container aria-label={grouped ? slot.label : undefined} className={`${grouped ? "check-in-section" : "metric-card"} ${complete ? "complete" : ""}`} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}><header>{!grouped && <span className="metric-icon"><MetricGlyph metric={metric} /></span>}<div>{grouped ? <h4>{slot.label}</h4> : <><h3>{metric.name}{slot.label && <small className="slot-label">{slot.label}</small>}</h3><p>{metric.description}</p></>}</div>{complete && <span className="check" role="img" aria-label="Recorded"><Check size={15} /></span>}</header>
-    <div className="metric-control">
+  return <Container aria-label={grouped ? slot.label : undefined} className={`${grouped ? "check-in-section" : "metric-card"} ${complete ? "complete" : ""} ${waiting ? "waiting" : ""}`} style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}><header>{!grouped && <span className="metric-icon"><MetricGlyph metric={metric} /></span>}<div>{grouped ? <h4>{slot.label ? displayTime(slot.label) : "Check-in"}</h4> : <><h3>{metric.name}{slot.label && <small className="slot-label">{displayTime(slot.label)}</small>}</h3><p>{metric.description}</p></>}</div>{complete && <span className="check" role="img" aria-label="Recorded"><Check size={15} /></span>}</header>
+    {waiting ? <div className="metric-waiting"><p>Available at {displayTime(slot.key)}</p><button className="secondary" onClick={() => setUnlocked(true)}>Set it now</button></div> : <div className="metric-control">
       {metric.type === "rating" && <div className="rating" style={{ "--range-fill": `${((Number(value) - (metric.ratingMin ?? 1)) / Math.max(1, (metric.ratingMax ?? 10) - (metric.ratingMin ?? 1))) * 100}%` } as React.CSSProperties}><input aria-label={metric.name} type="range" min={metric.ratingMin ?? 1} max={metric.ratingMax ?? 10} value={Number(value)} onChange={(e) => setValue(Number(e.target.value))} onBlur={() => save()} onPointerUp={(event) => save(Number(event.currentTarget.value))} onKeyUp={() => save()} /><div><span>{metric.ratingMin ?? 1}</span><strong>{value}<small>/ {metric.ratingMax ?? 10}</small></strong><span>{metric.ratingMax ?? 10}</span></div></div>}
       {metric.type === "boolean" && <div className="boolean"><button className={value === true ? "selected" : ""} aria-pressed={value === true} onClick={() => select(true)}>Yes</button><button className={value === false ? "selected" : ""} aria-pressed={value === false} onClick={() => select(false)}>No</button></div>}
       {metric.type === "number" && <><label className={`number-input ${showNumberError && !valid ? "invalid" : ""}`}><input aria-label={metric.name} aria-invalid={showNumberError && !valid} type="number" inputMode="decimal" required step="any" value={String(value)} onChange={(e) => { setValue(e.target.value); setShowNumberError(false); }} enterKeyHint="done" onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} onBlur={() => { setShowNumberError(!valid); save(); }} /><span>{metric.unit}</span></label>{showNumberError && !valid && <small className="field-error" role="alert">Enter a number.</small>}</>}
       {metric.type === "text" && <textarea aria-label={metric.name} value={String(value)} onChange={(e) => setValue(e.target.value)} onBlur={() => save()} placeholder="Write a short note…" />}
       {metric.type === "choice" && <select aria-label={metric.name} value={String(value)} onChange={(e) => select(e.target.value)}><option value="">Choose one…</option>{metric.options?.map((option) => <option key={option}>{option}</option>)}</select>}
-    </div>{metric.notesEnabled && <div onBlur={() => save()}><NoteField value={note} onChange={setNote} /></div>}</Container>;
+    </div>}{!waiting && metric.notesEnabled && <div onBlur={() => save()}><NoteField value={note} onChange={setNote} /></div>}</Container>;
 }
 
 function NoteField({ value, onChange }: { value: string; onChange: (value: string) => void }) { return <label className="entry-note">Notes <span>(optional)</span><textarea maxLength={500} value={value} onChange={(event) => onChange(event.target.value)} placeholder="Add context for this entry…" /></label>; }
@@ -273,7 +301,7 @@ function EditEntryModal({ entry, metric, onClose, onSave }: { entry: Entry; metr
 }
 
 function BackfillModal({ metrics, onClose, onSave }: { metrics: Metric[]; onClose: () => void; onSave: (metric: Metric, value: EntryValue, date: string, note?: string, slotKey?: string) => void }) {
-  const [metricId, setMetricId] = useState(metrics[0]?.id ?? ""); const [date, setDate] = useState(day()); const metric = metrics.find((item) => item.id === metricId) ?? metrics[0]; const [value, setValue] = useState<EntryValue>(metric?.type === "boolean" ? false : metric?.type === "rating" ? 5 : metric?.type === "number" ? 0 : ""); const [slotKey, setSlotKey] = useState(metric ? metricSlots(metric)[0]?.key ?? "daily" : "daily");
+  const [metricId, setMetricId] = useState(metrics[0]?.id ?? ""); const [date, setDate] = useState(previousDay); const metric = metrics.find((item) => item.id === metricId) ?? metrics[0]; const [value, setValue] = useState<EntryValue>(metric?.type === "boolean" ? false : metric?.type === "rating" ? 5 : metric?.type === "number" ? 0 : ""); const [slotKey, setSlotKey] = useState(metric ? metricSlots(metric)[0]?.key ?? "daily" : "daily");
   const [note, setNote] = useState("");
   const chooseMetric = (id: string) => { const next = metrics.find((item) => item.id === id); setMetricId(id); setValue(next?.type === "boolean" ? false : next?.type === "rating" ? 5 : next?.type === "number" ? 0 : ""); setSlotKey(next ? metricSlots(next)[0]?.key ?? "daily" : "daily"); setNote(""); };
   if (!metric) return null;
