@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AppearanceSettings } from "./appearance";
 import { AppDialog } from "./app-dialog";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
@@ -76,10 +76,8 @@ export function LifeLogApp() {
 function LifeLogWorkspace({ userId }: { userId: string | null }) {
   const { data, saveEntry, updateEntry, deleteEntry, addMetric, updateMetric, archiveMetric, restoreMetric, ready, syncStatus, pendingCount, syncNow } = useLifeLog(userId);
   const [tab, updateTab] = useState<Tab>("today");
-  const positions = useRef<Partial<Record<Tab, number>>>({});
   const setTab = (next: Tab) => {
     (document.activeElement as HTMLElement | null)?.blur();
-    positions.current[tab] = window.scrollY;
     if (next === tab) { window.scrollTo({ top: 0 }); return; }
     window.history.pushState(null, "", `#${next}`);
     updateTab(next);
@@ -96,7 +94,7 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
     window.addEventListener("popstate", navigate);
     return () => window.removeEventListener("popstate", navigate);
   }, []);
-  useEffect(() => { window.scrollTo({ top: positions.current[tab] ?? 0 }); }, [tab]);
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [tab]);
   useEffect(() => {
     const viewport = window.visualViewport;
     const update = () => {
