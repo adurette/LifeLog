@@ -7,7 +7,7 @@ self.addEventListener("fetch", (event) => {
 });
 self.addEventListener("push", (event) => {
   const data = event.data?.json() ?? { title: "LifeLog", body: "Take a minute to notice your day." };
-  event.waitUntil(self.registration.showNotification(data.title ?? "LifeLog", { body: data.body, icon: "/icon-192.png", badge: "/icon-192.png", data: { url: data.url ?? "/" } }));
+  event.waitUntil(self.registration.showNotification(data.title ?? "LifeLog", { body: data.body, icon: "/icon-192.png", badge: "/icon-192.png", tag: data.tag, data: { url: data.url ?? "/" } }));
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
