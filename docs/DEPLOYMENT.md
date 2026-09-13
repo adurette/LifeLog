@@ -6,9 +6,7 @@
 2. Copy the project URL and publishable key into the matching public environment variables.
 3. Keep the service-role key server-only.
 4. Set the production URL under Authentication → URL Configuration and retain `http://localhost:3000/**` for development.
-5. Under Authentication → Email Templates → Magic Link, use a code-based template that includes `{{ .Token }}` (not `{{ .ConfirmationURL }}`). For example: `Your LifeLog sign-in code is {{ .Token }}`. This lets installed iOS/Android PWAs finish authentication without moving the session into the browser.
-
-Keep Supabase's OTP request cooldown enabled. The app displays the 60-second resend wait and lets the user enter the code immediately.
+5. The default passwordless email link works in the browser. Installed iOS PWAs do not share the browser's authentication session, so reliable installed-app login requires either an email OTP template or another sign-in method.
 
 ## Web push
 

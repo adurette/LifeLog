@@ -153,23 +153,15 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
 }
 
 function AuthScreen() {
-  const [email, setEmail] = useState(""); const [code, setCode] = useState(""); const [sent, setSent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [resendIn, setResendIn] = useState(0);
-  useEffect(() => { if (!resendIn) return; const timer = window.setTimeout(() => setResendIn((seconds) => seconds - 1), 1_000); return () => window.clearTimeout(timer); }, [resendIn]);
-  const requestLink = async () => {
-    const supabase = getSupabase(); if (!supabase || busy) return;
-    setBusy(true); setError("");
-    try { const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } }); if (error) setError(error.message); else { setSent(true); setResendIn(60); } }
-    catch { setError("Couldn’t send your code. Check your connection and try again."); }
-    finally { setBusy(false); }
-  };
+  const [email, setEmail] = useState(""); const [sent, setSent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault(); const supabase = getSupabase(); if (!supabase || busy) return;
     setBusy(true); setError("");
-    try { const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: "email" }); if (error) setError(error.message); }
-    catch { setError("Couldn’t verify that code. Check your connection and try again."); }
+    try { const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.origin } }); if (error) setError(error.message); else setSent(true); }
+    catch { setError("Couldn’t send your link. Check your connection and try again."); }
     finally { setBusy(false); }
   };
-  return <div className="auth-screen"><div className="auth-card"><Brand /><span className="eyebrow">Your private record</span><h1>Notice what shapes your days.</h1><p>Track what matters to you, then gently explore the patterns over time.</p>{sent ? <><div className="email-sent" role="status"><Check size={18} />We sent a sign-in code to {email.trim()}.</div><form onSubmit={signIn}><label>Sign-in code<input type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label>{error && <p className="field-error" role="alert">{error}</p>}<button className="primary" disabled={busy || code.length !== 6}>{busy ? "Signing in…" : "Sign in"}</button></form><div className="auth-actions"><button className="text-button" type="button" disabled={busy || resendIn > 0} onClick={() => void requestLink()}>{resendIn ? `Resend in ${resendIn}s` : "Resend code"}</button><button className="text-button" type="button" disabled={busy} onClick={() => { setSent(false); setCode(""); setError(""); }}>Use another email</button></div></> : <form onSubmit={(event) => { event.preventDefault(); void requestLink(); }}><label>Email address<input type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>{error && <p className="field-error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Sending code…" : "Continue with email"}</button></form>}<small>Your data stays private to your account.</small></div></div>;
+  return <div className="auth-screen"><div className="auth-card"><Brand /><span className="eyebrow">Your private record</span><h1>Notice what shapes your days.</h1><p>Track what matters to you, then gently explore the patterns over time.</p>{sent ? <div className="email-sent" role="status"><Check size={18} />Check your email for your secure sign-in link.</div> : <form onSubmit={signIn}><label>Email address<input type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>{error && <p className="field-error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Sending link…" : "Continue with email"}</button></form>}<small>Your data stays private to your account.</small></div></div>;
 }
 
 function Brand() { return <div className="brand"><span className="brand-mark"><span /></span><span>LifeLog</span></div>; }
