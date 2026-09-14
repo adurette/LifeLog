@@ -65,11 +65,23 @@ it("increments and reverses event metrics from a full-size metric card", () => {
   const coffee = { ...metric, name: "Coffee", type: "number" as const, loggingMode: "event" as const, unit: "cups" };
   const entry = { id: "cup", value: 1 } as Entry;
   render(<EventMetricCard metric={coffee} entries={[entry]} onSave={onSave} onUpdate={onUpdate} onDelete={onDelete} />);
-  expect(screen.getByText("1")).toBeTruthy();
+  expect((screen.getByRole("spinbutton") as HTMLInputElement).value).toBe("1");
   fireEvent.click(screen.getByRole("button", { name: "Increase Coffee by 1" }));
   expect(onSave).toHaveBeenCalledWith(coffee, 1, undefined, "");
   fireEvent.click(screen.getByRole("button", { name: "Decrease Coffee by 1" }));
   expect(onDelete).toHaveBeenCalledWith(entry);
+});
+
+it("lets an event total be edited directly", () => {
+  const onSave = vi.fn();
+  const coffee = { ...metric, name: "Coffee", type: "number" as const, loggingMode: "event" as const, unit: "cups" };
+  render(<EventMetricCard metric={coffee} entries={[{ id: "cup", value: 1 } as Entry]} onSave={onSave} onUpdate={vi.fn()} onDelete={vi.fn()} />);
+
+  const input = screen.getByRole("spinbutton");
+  fireEvent.change(input, { target: { value: "4" } });
+  fireEvent.blur(input);
+
+  expect(onSave).toHaveBeenCalledWith(coffee, 3, undefined, "");
 });
 
 it("includes event metrics in today's completion progress", () => {
