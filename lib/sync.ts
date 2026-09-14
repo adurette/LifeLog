@@ -6,6 +6,7 @@ export type SyncOperation =
   | { id: string; kind: "update-entry"; payload: Record<string, unknown> }
   | { id: string; kind: "delete-entry"; payload: { id: string } }
   | { id: string; kind: "metric"; payload: Record<string, unknown> }
+  | { id: string; kind: "delete-metric"; payload: { id: string } }
   | { id: string; kind: "archive"; payload: { id: string; archived_at: string } };
 
 export interface SyncResult { pending: number; error: string | null }
@@ -21,6 +22,7 @@ async function execute(operation: SyncOperation) {
   if (operation.kind === "update-entry") return supabase.from("entries").update(operation.payload).eq("id", operation.payload.id);
   if (operation.kind === "delete-entry") return supabase.from("entries").delete().eq("id", operation.payload.id);
   if (operation.kind === "metric") return supabase.from("metrics").upsert(operation.payload, { onConflict: "id" });
+  if (operation.kind === "delete-metric") return supabase.from("metrics").delete().eq("id", operation.payload.id);
   return supabase.from("metrics").update({ archived_at: operation.payload.archived_at }).eq("id", operation.payload.id);
 }
 

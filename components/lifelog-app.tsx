@@ -62,7 +62,8 @@ function useLifeLog(userId: string | null) {
   const updateMetric = (metric: Metric) => { setData((current) => ({ ...current, metrics: current.metrics.map((item) => item.id === metric.id ? metric : item) })); send({ id: `metric:${metric.id}`, kind: "metric", payload: cloudMetric(metric, userId) }); };
   const archiveMetric = (id: string) => { const archivedAt = new Date().toISOString(); setData((current) => ({ ...current, metrics: current.metrics.map((metric) => metric.id === id ? { ...metric, archived: true } : metric) })); send({ id: `archive:${id}`, kind: "archive", payload: { id, archived_at: archivedAt } }); };
   const restoreMetric = (id: string) => { const metric = data.metrics.find((item) => item.id === id); if (metric) updateMetric({ ...metric, archived: false }); };
-  return { data, saveEntry, updateEntry, deleteEntry, addMetric, updateMetric, archiveMetric, restoreMetric, ready, syncStatus, pendingCount, syncNow };
+  const deleteMetric = (id: string) => { setData((current) => ({ metrics: current.metrics.filter((metric) => metric.id !== id), entries: current.entries.filter((entry) => entry.metricId !== id) })); send({ id: `delete-metric:${id}`, kind: "delete-metric", payload: { id } }); };
+  return { data, saveEntry, updateEntry, deleteEntry, addMetric, updateMetric, archiveMetric, restoreMetric, deleteMetric, ready, syncStatus, pendingCount, syncNow };
 }
 
 export function LifeLogApp() {
@@ -75,7 +76,7 @@ export function LifeLogApp() {
 }
 
 function LifeLogWorkspace({ userId }: { userId: string | null }) {
-  const { data, saveEntry, updateEntry, deleteEntry, addMetric, updateMetric, archiveMetric, restoreMetric, ready, syncStatus, pendingCount, syncNow } = useLifeLog(userId);
+  const { data, saveEntry, updateEntry, deleteEntry, addMetric, updateMetric, archiveMetric, restoreMetric, deleteMetric, ready, syncStatus, pendingCount, syncNow } = useLifeLog(userId);
   const [tab, updateTab] = useState<Tab>("today");
   const setTab = (next: Tab) => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -141,7 +142,7 @@ function LifeLogWorkspace({ userId }: { userId: string | null }) {
         <MobileHeader online={online} syncStatus={syncStatus} pendingCount={pendingCount} onSync={syncNow} />
         {tab === "today" && <Today metrics={active} entries={data.entries} onSave={saveEntry} onUpdate={updateEntry} onDelete={deleteEntry} onAdd={() => setShowAdd(true)} />}
         {tab === "history" && <HistoryView metrics={data.metrics} entries={data.entries} onAdd={saveEntry} onUpdate={updateEntry} onDelete={deleteEntry} />}
-        {tab === "metrics" && <MetricsView metrics={data.metrics} entries={data.entries} onAdd={() => setShowAdd(true)} onEdit={setEditingMetric} onArchive={archiveMetric} onRestore={restoreMetric} />}
+        {tab === "metrics" && <MetricsView metrics={data.metrics} entries={data.entries} onAdd={() => setShowAdd(true)} onEdit={setEditingMetric} onArchive={archiveMetric} onRestore={restoreMetric} onDelete={deleteMetric} />}
         {tab === "insights" && <Insights metrics={active} entries={data.entries} />}
         {tab === "settings" && <SettingsView data={data} userId={userId} />}
       </main>
@@ -309,9 +310,9 @@ function BackfillModal({ metrics, onClose, onSave }: { metrics: Metric[]; onClos
 
 function loggingPatternLabel(metric: Metric) { if (metric.loggingMode === "event") return "log whenever it happens"; if (metric.frequency === "times") return `${metric.timesPerDay ?? 1} check-ins per day`; if (metric.frequency === "interval") return `every ${metric.intervalHours ?? 1} hours`; return "one check-in per day"; }
 
-export function MetricsView({ metrics, entries, onAdd, onEdit, onArchive, onRestore }: { metrics: Metric[]; entries: Entry[]; onAdd: () => void; onEdit: (metric: Metric) => void; onArchive: (id: string) => void; onRestore: (id: string) => void }) {
+export function MetricsView({ metrics, entries, onAdd, onEdit, onArchive, onRestore, onDelete }: { metrics: Metric[]; entries: Entry[]; onAdd: () => void; onEdit: (metric: Metric) => void; onArchive: (id: string) => void; onRestore: (id: string) => void; onDelete?: (id: string) => void }) {
   const active = metrics.filter((metric) => !metric.archived); const archived = metrics.filter((metric) => metric.archived);
-  const rows = (items: Metric[], isArchived = false) => items.map((metric) => { const count = entries.filter((entry) => entry.metricId === metric.id).length; const remove = () => { if (window.confirm(`Delete ${metric.name}? It will be removed from Today's tracking page, but previous entries will still be saved. You can restore the metric later from Archived if desired.`)) onArchive(metric.id); }; return <article key={metric.id}><span className="metric-icon" style={{ color: COLORS[metric.color], background: `${COLORS[metric.color]}18` }}><MetricGlyph metric={metric} size={20} /></span><div><strong>{metric.name}</strong><span>{metric.type.replace("_", " ")} · {loggingPatternLabel(metric)} · {metric.schedule} · {count} entries</span></div><div className="manage-actions">{!isArchived && <button aria-label={`Edit ${metric.name}`} onClick={() => onEdit(metric)}><Pencil size={17} /></button>}<button aria-label={`${isArchived ? "Restore" : "Delete"} ${metric.name}`} onClick={() => isArchived ? onRestore(metric.id) : remove()}>{isArchived ? <RotateCcw size={17} /> : <Trash2 size={17} />}</button></div></article>; });
+  const rows = (items: Metric[], isArchived = false) => items.map((metric) => { const count = entries.filter((entry) => entry.metricId === metric.id).length; const remove = () => { if (window.confirm(`Delete ${metric.name}? It will be removed from Today's tracking page, but previous entries will still be saved. You can restore the metric later from Archived if desired.`)) onArchive(metric.id); }; const permanentlyDelete = () => { if (window.confirm(`Permanently delete ${metric.name} and its ${count} ${count === 1 ? "entry" : "entries"}? This cannot be undone.`)) onDelete?.(metric.id); }; return <article key={metric.id}><span className="metric-icon" style={{ color: COLORS[metric.color], background: `${COLORS[metric.color]}18` }}><MetricGlyph metric={metric} size={20} /></span><div><strong>{metric.name}</strong><span>{metric.type.replace("_", " ")} · {loggingPatternLabel(metric)} · {metric.schedule} · {count} entries</span></div><div className="manage-actions">{!isArchived && <button aria-label={`Edit ${metric.name}`} onClick={() => onEdit(metric)}><Pencil size={17} /></button>}{isArchived && <button aria-label={`Restore ${metric.name}`} onClick={() => onRestore(metric.id)}><RotateCcw size={17} /></button>}<button aria-label={`${isArchived ? "Permanently delete" : "Delete"} ${metric.name}`} onClick={isArchived ? permanentlyDelete : remove}><Trash2 size={17} /></button></div></article>; });
   return <div className="page"><PageHeader eyebrow="Your practice" title="Things you track" copy="Keep only the questions that help you notice something useful." action={<button className="primary" onClick={onAdd}><Plus size={17} />Add metric</button>} /><section className="manage-list">{rows(active)}</section>{archived.length > 0 && <><div className="section-heading archived-heading"><div><h2>Archived</h2><p>Restore a metric without losing its history.</p></div></div><section className="manage-list archived-list">{rows(archived, true)}</section></>}</div>;
 }
 

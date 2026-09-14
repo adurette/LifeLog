@@ -84,6 +84,17 @@ it("confirms metric deletion and explains that past entries remain", () => {
   confirm.mockRestore();
 });
 
+it("permanently deletes an archived metric and its entries after confirmation", () => {
+  const archived = { ...metric, archived: true };
+  const onDelete = vi.fn();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<MetricsView metrics={[archived]} entries={[{ id: "past", metricId: metric.id } as Entry]} onAdd={vi.fn()} onEdit={vi.fn()} onArchive={vi.fn()} onRestore={vi.fn()} onDelete={onDelete} />);
+  fireEvent.click(screen.getByRole("button", { name: "Permanently delete Test" }));
+  expect(confirm).toHaveBeenCalledWith("Permanently delete Test and its 1 entry? This cannot be undone.");
+  expect(onDelete).toHaveBeenCalledWith(metric.id);
+  confirm.mockRestore();
+});
+
 it("allows typing 12 check-ins without clamping intermediate input and validates limits", () => {
   const onAdd = vi.fn();
   render(<AddMetricModal initial={{ ...metric, frequency: "times", timesPerDay: 3 }} onAdd={onAdd} onClose={vi.fn()} />);
