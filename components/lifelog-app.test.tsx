@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { AddMetricModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard, MetricsView } from "./lifelog-app";
+import { AddMetricModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard, MetricsView, Today } from "./lifelog-app";
 import type { Entry, Metric } from "@/lib/types";
 
 beforeAll(() => {
@@ -70,6 +70,19 @@ it("increments and reverses event metrics from a full-size metric card", () => {
   expect(onSave).toHaveBeenCalledWith(coffee, 1, undefined, "");
   fireEvent.click(screen.getByRole("button", { name: "Decrease Coffee by 1" }));
   expect(onDelete).toHaveBeenCalledWith(entry);
+});
+
+it("includes event metrics in today's completion progress", () => {
+  const now = new Date();
+  const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const dailyMetrics = ["Meditated", "Drinks", "Exercise"].map((name, index) => ({ ...metric, id: `daily-${index}`, name }));
+  const coffee = { ...metric, id: "coffee", name: "Coffee", type: "number" as const, loggingMode: "event" as const };
+  const entries = [...dailyMetrics.map((item, index) => ({ id: `entry-${index}`, metricId: item.id, localDate, value: true } as Entry)), { id: "coffee-entry", metricId: coffee.id, localDate, value: 1 } as Entry];
+
+  render(<Today metrics={[...dailyMetrics, coffee]} entries={entries} onSave={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+
+  expect(screen.getByText("4 of 4 complete")).toBeTruthy();
+  expect(screen.getByText("100%")).toBeTruthy();
 });
 
 it("confirms metric deletion and explains that past entries remain", () => {

@@ -206,7 +206,7 @@ function displayTime(time: string) {
   return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
-function Today({ metrics, entries, onSave, onUpdate, onDelete, onAdd }: { metrics: Metric[]; entries: Entry[]; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void; onUpdate: (entry: Entry, value: EntryValue, note?: string) => void; onDelete: (entry: Entry) => void; onAdd: () => void }) {
+export function Today({ metrics, entries, onSave, onUpdate, onDelete, onAdd }: { metrics: Metric[]; entries: Entry[]; onSave: (metric: Metric, value: EntryValue, date?: string, note?: string, slotKey?: string) => void; onUpdate: (entry: Entry, value: EntryValue, note?: string) => void; onDelete: (entry: Entry) => void; onAdd: () => void }) {
   const [today, setToday] = useState(day);
   const [nowMinutes, setNowMinutes] = useState(() => { const now = new Date(); return now.getHours() * 60 + now.getMinutes(); });
   const [addingPast, setAddingPast] = useState(false);
@@ -215,9 +215,12 @@ function Today({ metrics, entries, onSave, onUpdate, onDelete, onAdd }: { metric
   const due = metrics.filter((metric) => metric.loggingMode === "daily" && (metric.schedule === "daily" || (metric.schedule === "weekdays" && metric.weekdays?.includes(weekday))));
   const events = metrics.filter((metric) => metric.loggingMode === "event");
   const scheduled = due.flatMap((metric) => metricSlots(metric).map((slot) => ({ metric, slot })));
-  const done = scheduled.filter(({ metric, slot }) => entries.some((entry) => entry.metricId === metric.id && entry.localDate === today && (entry.slotKey ?? "daily") === slot.key)).length;
+  const scheduledDone = scheduled.filter(({ metric, slot }) => entries.some((entry) => entry.metricId === metric.id && entry.localDate === today && (entry.slotKey ?? "daily") === slot.key)).length;
+  const eventsDone = events.filter((metric) => entries.some((entry) => entry.metricId === metric.id && entry.localDate === today)).length;
+  const total = scheduled.length + events.length;
+  const done = scheduledDone + eventsDone;
   return <div className="page"><PageHeader eyebrow={new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date())} title="How was your day?" copy="A minute of noticing adds up to a clearer picture." />
-    <section className="progress-card"><div><span>Today’s check-in</span><strong>{done} of {scheduled.length} complete</strong></div><div className="progress-track"><span style={{ width: `${scheduled.length ? (done / scheduled.length) * 100 : 0}%` }} /></div><span className="progress-number">{scheduled.length ? Math.round(done / scheduled.length * 100) : 0}%</span></section>
+    <section className="progress-card"><div><span>Today’s check-in</span><strong>{done} of {total} complete</strong></div><div className="progress-track"><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div><span className="progress-number">{total ? Math.round(done / total * 100) : 0}%</span></section>
     <div className="section-heading"><div><h2>Today’s metrics</h2><p>Changes save as you go.</p></div><button className="text-button" onClick={() => setAddingPast(true)}><CalendarDays size={16} />Add past entry</button></div>
     {due.length + events.length === 0 && <div className="empty-state"><Check size={28} /><h2>Nothing to track today</h2><p>Add a metric or record an entry from History.</p><button className="secondary" onClick={onAdd}>Add a metric</button></div>}<section className="metric-grid">{due.map((metric) => <DailyMetricCard key={`${today}-${metric.id}`} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} nowMinutes={nowMinutes} />)}{events.map((metric) => <EventMetricCard key={metric.id} metric={metric} entries={entries.filter((entry) => entry.metricId === metric.id && entry.localDate === today)} onSave={onSave} onUpdate={onUpdate} onDelete={onDelete} />)}</section>
     {addingPast && <BackfillModal metrics={metrics} onClose={() => setAddingPast(false)} onSave={(metric, value, date, note, slotKey) => { onSave(metric, value, date, note, slotKey); setAddingPast(false); }} />}
