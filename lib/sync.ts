@@ -3,6 +3,7 @@ import { getSupabase } from "./supabase";
 
 export type SyncOperation =
   | { id: string; kind: "entry"; payload: Record<string, unknown> }
+  | { id: string; kind: "update-entry"; payload: Record<string, unknown> }
   | { id: string; kind: "delete-entry"; payload: { id: string } }
   | { id: string; kind: "metric"; payload: Record<string, unknown> }
   | { id: string; kind: "archive"; payload: { id: string; archived_at: string } };
@@ -17,6 +18,7 @@ async function execute(operation: SyncOperation) {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Cloud client is unavailable");
   if (operation.kind === "entry") return supabase.from("entries").upsert(operation.payload, { onConflict: "user_id,metric_id,local_date,slot_key" });
+  if (operation.kind === "update-entry") return supabase.from("entries").update(operation.payload).eq("id", operation.payload.id);
   if (operation.kind === "delete-entry") return supabase.from("entries").delete().eq("id", operation.payload.id);
   if (operation.kind === "metric") return supabase.from("metrics").upsert(operation.payload, { onConflict: "id" });
   return supabase.from("metrics").update({ archived_at: operation.payload.archived_at }).eq("id", operation.payload.id);
