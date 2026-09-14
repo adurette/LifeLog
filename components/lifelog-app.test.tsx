@@ -114,6 +114,17 @@ it("allows typing 12 check-ins without clamping intermediate input and validates
   }
 });
 
+it("keeps notes available before reminder scheduling", () => {
+  render(<AddMetricModal onAdd={vi.fn()} onClose={vi.fn()} />);
+  const notes = screen.getByRole("checkbox", { name: /Allow notes/ }) as HTMLInputElement;
+  const unit = screen.getByRole("textbox", { name: /Unit/ });
+  const reminder = screen.getByRole("checkbox", { name: /Push reminders/ });
+
+  expect(notes.disabled).toBe(false);
+  expect(unit.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(notes.compareDocumentPosition(reminder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it("groups recordings under one metric heading and saves each slot independently", () => {
   const onSave = vi.fn();
   const multiple = { ...metric, frequency: "times" as const, timesPerDay: 3, scheduleTimes: ["08:00", "12:00", "18:00"], notesEnabled: true };
