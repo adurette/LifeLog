@@ -12,6 +12,7 @@ afterEach(() => {
 it("applies and remembers a text size preference", () => {
   render(<AppearanceSettings />);
 
+  expect(screen.getByRole("group", { name: "Text size" }).querySelectorAll("button")).toHaveLength(5);
   const large = screen.getByText("Large").closest("button")!;
   fireEvent.click(large);
 

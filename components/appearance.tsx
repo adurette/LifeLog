@@ -11,7 +11,9 @@ const THEMES = [
 const FONT_SIZES = [
   { id: "standard", name: "Standard", sample: "Aa", description: "16px base" },
   { id: "large", name: "Large", sample: "Aa", description: "18px base" },
-  { id: "largest", name: "Largest", sample: "Aa", description: "20px base" },
+  { id: "larger", name: "Larger", sample: "Aa", description: "20px base" },
+  { id: "extra-large", name: "Extra large", sample: "Aa", description: "22px base" },
+  { id: "largest", name: "Largest", sample: "Aa", description: "24px base" },
 ] as const;
 const subscribe = (callback: () => void) => {
   window.addEventListener("lifelog-appearance", callback);
