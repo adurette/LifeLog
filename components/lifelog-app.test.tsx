@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { AddMetricModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard, MetricsView, Today } from "./lifelog-app";
+import { AddMetricModal, BackfillModal, BottomNav, DailyMetricCard, EventMetricCard, MetricCard, MetricsView, Today } from "./lifelog-app";
 import type { Entry, Metric } from "@/lib/types";
 
 beforeAll(() => {
@@ -82,6 +82,22 @@ it("lets an event total be edited directly", () => {
   fireEvent.blur(input);
 
   expect(onSave).toHaveBeenCalledWith(coffee, 3, undefined, "");
+});
+
+it("uses unified editable number controls for past entries", () => {
+  const onSave = vi.fn();
+  const drinks = { ...metric, id: "drinks", name: "Drinks", type: "number" as const, unit: "drinks" };
+  const coffee = { ...drinks, id: "coffee", name: "Coffee", loggingMode: "event" as const, schedule: "flexible" as const, unit: "cups" };
+  render(<BackfillModal metrics={[drinks, coffee]} onClose={vi.fn()} onSave={onSave} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Increase Drinks by 1" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Coffee" }), { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save entries" }));
+
+  expect(screen.getByText("Daily total")).toBeTruthy();
+  expect(screen.getByText("Log each time")).toBeTruthy();
+  expect(onSave).toHaveBeenCalledWith(drinks, 1, expect.any(String), undefined, "daily");
+  expect(onSave).toHaveBeenCalledWith(coffee, 3, expect.any(String), undefined, "event");
 });
 
 it("includes event metrics in today's completion progress", () => {
