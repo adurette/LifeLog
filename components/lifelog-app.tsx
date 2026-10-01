@@ -280,7 +280,11 @@ export function EventMetricCard({ metric, entries, onSave, onUpdate, onDelete }:
   const [draft, setDraft] = useState<string | null>(null);
   const setTotal = (next: number) => {
     setDraft(null);
-    if (!Number.isFinite(next) || next < 0 || next === total) return;
+    if (!Number.isFinite(next) || next < 0) return;
+    if (next === total) {
+      if (next === 0 && entries.length === 0) onSave(metric, 0, undefined, note);
+      return;
+    }
     if (next > total) { onSave(metric, next - total, undefined, note); setNote(""); return; }
     let remaining = total - next;
     for (const entry of [...entries].reverse()) {
@@ -290,6 +294,7 @@ export function EventMetricCard({ metric, entries, onSave, onUpdate, onDelete }:
       else { onUpdate(entry, amount - remaining, entry.note); remaining = 0; }
       if (remaining <= 0) break;
     }
+    if (next === 0 && !entries.some((entry) => Number(entry.value) === 0)) onSave(metric, 0, undefined, note);
   };
   return <article className="metric-card event-metric" style={{ "--metric": COLORS[metric.color] } as React.CSSProperties}><header><span className="metric-icon"><MetricGlyph metric={metric} /></span><div><h3>{metric.name}</h3><small className="mode-label">Log each time</small><p>{metric.description || "Log it whenever it happens."}</p></div></header><div className="metric-control"><div className="number-stepper unified-number"><button aria-label={`Decrease ${metric.name} by 1`} disabled={total <= 0} onClick={() => setTotal(Math.max(0, total - 1))}><Minus size={18} /></button><label className="number-input"><input aria-label={metric.name} type="number" min="0" inputMode="decimal" step="any" value={draft ?? String(total)} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} onBlur={() => setTotal(Number(draft ?? total))} /><span>{metric.unit || "total"}</span></label><button aria-label={`Increase ${metric.name} by 1`} onClick={() => setTotal(total + 1)}><Plus size={18} /></button></div></div>{metric.notesEnabled && <NoteField value={note} onChange={setNote} />}</article>;
 }

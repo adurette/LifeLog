@@ -84,6 +84,25 @@ it("lets an event total be edited directly", () => {
   expect(onSave).toHaveBeenCalledWith(coffee, 3, undefined, "");
 });
 
+it("records zero as a tracked event number", () => {
+  const onSave = vi.fn();
+  const onDelete = vi.fn();
+  const coffee = { ...metric, name: "Coffee", type: "number" as const, loggingMode: "event" as const, unit: "cups" };
+  const view = render(<EventMetricCard metric={coffee} entries={[]} onSave={onSave} onUpdate={vi.fn()} onDelete={onDelete} />);
+
+  const input = screen.getByRole("spinbutton");
+  fireEvent.change(input, { target: { value: "0" } });
+  fireEvent.blur(input);
+  expect(onSave).toHaveBeenCalledWith(coffee, 0, undefined, "");
+
+  const entry = { id: "cup", value: 1 } as Entry;
+  view.rerender(<EventMetricCard metric={coffee} entries={[entry]} onSave={onSave} onUpdate={vi.fn()} onDelete={onDelete} />);
+  fireEvent.change(input, { target: { value: "0" } });
+  fireEvent.blur(input);
+  expect(onDelete).toHaveBeenCalledWith(entry);
+  expect(onSave).toHaveBeenLastCalledWith(coffee, 0, undefined, "");
+});
+
 it("uses unified editable number controls for past entries", () => {
   const onSave = vi.fn();
   const drinks = { ...metric, id: "drinks", name: "Drinks", type: "number" as const, unit: "drinks" };
